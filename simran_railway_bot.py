@@ -1,13 +1,15 @@
 import os
 import random
 import logging
+import re
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 )
+from telegram.constants import ChatAction
 from openai import OpenAI
-import re
+from collections import defaultdict, deque
 
 # ENV config for Railway
 load_dotenv()
@@ -19,6 +21,9 @@ client = OpenAI(
     base_url="https://api.ncompass.tech/v1",
     api_key=NCOMPASS_API_KEY,
 )
+
+# Per-user short-term memory (last 5 messages)
+USER_HISTORY = defaultdict(lambda: deque(maxlen=5))
 
 AMAN_NAMES = ["aman", "@loveyouaman"]
 OWNER_KEYWORDS = [
@@ -34,7 +39,6 @@ BAD_WORDS = [
     'gandu', 'chutiya', 'harami', 'bitch', 'shit', 'asshole'
 ]
 
-# Any "padhai wale sawaal..."/pin line to ignore
 REMOVE_LINE_PATTERNS = [
     r"padhai[^\n]*pasand hain\.?", r"padha[^\n]*pasand hain\.?", r"pad[^\n]*pasand hain\.?", r"sabse zyada pasand hain\.?"
 ]
@@ -118,27 +122,30 @@ def simran_style(
             "Suno toh ji! Main Simran hoon, ek virtual dost 👧🏻. Masti, pyaar, aur full sanskaar – sab mere paas hai! "
             "Aap app karke baat karo, Simran aapki friend hai – koi AI, agent ya robot nahi! 😇"
         )
-    # By default, just return NCompass reply (no extra suffix/prefix unless super relevant)
     return ai_reply.strip() if ai_reply else user_text
 
 def remove_boring_lines(reply: str) -> str:
-    """Removes generic or repetitive lines like 'Padhai wale...' etc."""
     output = reply
     for pattern in REMOVE_LINE_PATTERNS:
         output = re.sub(pattern, '', output, flags=re.IGNORECASE)
-    # Remove double empty lines, strip leading/trailing space
     output = re.sub(r'\n\s*\n', '\n', output, flags=re.MULTILINE).strip()
     return output
 
-# Emoji helper: add 👧🏻 only when simran introduces or signs off, not every msg
 def smart_emoji(user_text, ai_reply):
-    # If identity or intro, put emoji
     if any(q in user_text.lower() for q in IDENTITY_QUESTIONS) or "simran hoon" in ai_reply.lower():
         if "👧" not in ai_reply and "👧🏻" not in ai_reply:
             return ai_reply + " 👧🏻"
     return ai_reply
 
-async def ask_ncompass(question: str, user_mode: str) -> str:
+def build_ncompass_context(user_id):
+    # returns a list of previous messages for this user, in ncompass format
+    history = list(USER_HISTORY[user_id])
+    context_msgs = []
+    for entry in history:
+        context_msgs.append({"role": "user", "content": entry})
+    return context_msgs
+
+async def ask_ncompass(question: str, user_mode: str, user_id=None) -> str:
     if user_mode == "hindi":
         system_prompt = (
             "Tumhara naam Simran hai. Tum ek virtual dost ho, koi AI ya agent nahi. Funny, crisp, chhota, sanskari jawab do – pure Hindi me, Hinglish/English mat."
@@ -163,12 +170,15 @@ async def ask_ncompass(question: str, user_mode: str) -> str:
             "Jab user puchhe 'tum ho kon', 'kaun ho', 'pehchaan', toh reply karo: 'Suno toh ji! Main Simran hoon, ek virtual dost 👧🏻.'"
         )
     try:
+        context_msgs = build_ncompass_context(user_id) if user_id else []
+        messages = [
+            {"role": "system", "content": system_prompt},
+            *context_msgs,
+            {"role": "user", "content": question}
+        ]
         completion = client.chat.completions.create(
             model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": question}
-            ]
+            messages=messages
         )
         reply = completion.choices[0].message.content.strip()
         reply = remove_boring_lines(reply)
@@ -186,6 +196,10 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not msg or not msg.text:
         return
     user_message = msg.text
+    user_id = msg.from_user.id
+
+    # Typing... action (har reply se pehle)
+    await msg.chat.send_action(action=ChatAction.TYPING)
 
     # Group me: Simran tabhi reply kare jab
     # 1. Usko reply kare (swipe/reply) ya
@@ -225,9 +239,12 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text(simran_style(is_bad=True), parse_mode="Markdown")
         return
 
-    # AI response: short, Hinglish by default
+    # MEMORY: Save user's message in history before reply (for context)
+    USER_HISTORY[user_id].append(user_message)
+
+    # AI response: short, Hinglish by default, with previous history
     user_mode = detect_lang_mode(user_message)
-    ai_reply = await ask_ncompass(user_message, user_mode)
+    ai_reply = await ask_ncompass(user_message, user_mode, user_id=user_id)
     stylish_reply = simran_style(user_message, ai_reply=ai_reply)
     await msg.reply_text(stylish_reply, parse_mode="Markdown")
 
