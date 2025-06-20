@@ -30,19 +30,6 @@ def is_bad_message(text: str) -> bool:
     text_lower = text.lower()
     return any(bad in text_lower for bad in BAD_WORDS)
 
-def is_simran_mentioned(update: Update) -> bool:
-    msg = update.message
-    if not msg or not msg.text:
-        return False
-    text = msg.text.lower()
-    if msg.entities:
-        for entity in msg.entities:
-            if entity.type == "mention" and f"@{SIMRAN_USERNAME}" in text:
-                return True
-    if "simran" in text:
-        return True
-    return False
-
 def simran_style(
     user_text="",
     ai_reply=None,
@@ -89,7 +76,7 @@ async def ask_deepseek(question: str) -> str:
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "deepseek-chat",
+        "model": "deepseek-chat",  # OpenRouter pe model available hai to
         "messages": [{"role": "user", "content": question}],
         "max_tokens": 200,
         "temperature": 0.7
@@ -112,19 +99,31 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     user_message = msg.text
 
+    # Group me sirf tab reply karo jab koi Simran ke msg ko reply kare (swipe/reply)
     if msg.chat.type in ["group", "supergroup"]:
-        if not is_simran_mentioned(update):
+        if not msg.reply_to_message:
+            return
+        # Check karo kya reply kiya gaya message Simran ka hai
+        if (
+            not msg.reply_to_message.from_user or
+            not msg.reply_to_message.from_user.is_bot or
+            msg.reply_to_message.from_user.username is None or
+            msg.reply_to_message.from_user.username.lower() != SIMRAN_USERNAME.lower()
+        ):
             return
 
+    # Credit/creator
     ask_credit = any(word in user_message.lower() for word in ["creator", "banaya", "credit", "aman"])
     if ask_credit:
         await msg.reply_text(simran_style(is_credit=True))
         return
 
+    # Bad words
     if is_bad_message(user_message):
         await msg.reply_text(simran_style(is_bad=True))
         return
 
+    # AI response
     ai_reply = await ask_deepseek(user_message)
     stylish_reply = simran_style(user_message, ai_reply=ai_reply)
     await msg.reply_text(stylish_reply)
