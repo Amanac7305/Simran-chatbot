@@ -12,7 +12,7 @@ load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 SIMRAN_USERNAME = "simranchatbot"
-AMAN_NAMES = ["aman", "@loveyouaman"]  # Add more if needed
+AMAN_NAMES = ["aman", "@loveyouaman"]
 OWNER_KEYWORDS = [
     "founder", "owner", "creator", "bf", "boyfriend", "banaya", 
     "dost", "friend", "frd", "father", "maker", "develop", "creator"
@@ -104,10 +104,13 @@ async def ask_deepseek(question: str) -> str:
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        # Optional headers for rankings on openrouter.ai, fill if you want!
+        # "HTTP-Referer": "https://yourwebsite.com",
+        # "X-Title": "Simran Telegram Bot"
     }
     payload = {
-        "model": "deepseek-chat-v3-0324",  # <--- ONLY THIS LINE UPDATED!
+        "model": "deepseek/deepseek-chat-v3-0324:free",
         "messages": [{"role": "user", "content": question}],
         "max_tokens": 200,
         "temperature": 0.7
@@ -116,7 +119,13 @@ async def ask_deepseek(question: str) -> str:
         async with ClientSession(timeout=ClientTimeout(total=20)) as session:
             async with session.post(url, headers=headers, json=payload) as resp:
                 data = await resp.json()
-                return data['choices'][0]['message']['content'].strip()
+                # Check for API error or correct response
+                if "choices" in data and data["choices"]:
+                    return data['choices'][0]['message']['content'].strip()
+                elif "error" in data:
+                    return f"Simran: API Error - {data['error']['message']}"
+                else:
+                    return "Simran: DeepSeek se sahi jawab nahi aaya!"
     except Exception as e:
         logger.error(f"DeepSeek error: {e}")
         return "Arey, Simran thoda busy ho gayi hai, baad me try karo ji!"
