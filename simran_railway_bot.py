@@ -2,19 +2,24 @@ import os
 import random
 import logging
 from dotenv import load_dotenv
-from aiohttp import ClientSession, ClientTimeout
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 )
+from openai import OpenAI
 
 # Load environment variables (Railway variables will be loaded here)
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+NCOMPASS_API_KEY = os.getenv("NCOMPASS_API_KEY")
 SIMRAN_USERNAME = "simranchatbot"
 
-# Trigger keywords/lists
+# NCompass client setup
+client = OpenAI(
+    base_url="https://api.ncompass.tech/v1",
+    api_key=NCOMPASS_API_KEY,
+)
+
 AMAN_NAMES = ["aman", "@loveyouaman"]
 OWNER_KEYWORDS = [
     "founder", "owner", "creator", "bf", "boyfriend", "banaya",
@@ -60,12 +65,10 @@ def is_identity_question(text: str) -> bool:
 
 def detect_lang_mode(user_text):
     txt = user_text.lower()
-    # Language switch
     if "hindi me batao" in txt or "hindi mein batao" in txt or "hindi me samjhao" in txt:
         return "hindi"
     if "english me batao" in txt or "english mein batao" in txt or "english me samjhao" in txt:
         return "english"
-    # Details switch
     if "details me batao" in txt or "long answer" in txt or "detail" in txt or "explain" in txt:
         return "details"
     return "default"
@@ -128,14 +131,8 @@ def simran_style(
         ai_reply = user_text
     return f"{prefix}{ai_reply}\n\n{suffix}"
 
-async def ask_deepseek(question: str, user_mode: str) -> str:
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    # Smart system prompt for Simran's chatty, short, Hinglish style
+async def ask_ncompass(question: str, user_mode: str) -> str:
+    # System prompt for Simran's chatty, short, Hinglish style
     if user_mode == "hindi":
         system_prompt = "Aage ke sab replies short aur friendly Hindi me do, kabhi bhi Hinglish ya English mat use karo. Jab tak user kuch aur na bole, bas Hindi me short chat style me jawaab do."
     elif user_mode == "english":
@@ -150,31 +147,21 @@ async def ask_deepseek(question: str, user_mode: str) -> str:
             "Tumhara naam Simran hai. Tum ek virtual chat friend ho, koi AI agent ya bot ya assistant nahi. "
             "Reply strictly in SHORT Hinglish (mix of Hindi and English), jaise normal dosti wali chatting. "
             "Kabhi bhi lamba ya formal answer mat dena jab tak user 'details' ya 'long answer' na bole. "
-            "Apni identity sirf Simran batana, kabhi 'AI', 'deepseek', ya 'agent' na likhna. "
+            "Apni identity sirf Simran batana, kabhi 'AI', 'ncompass', 'meta', 'agent' ya 'openai' na likhna. "
             "Short, masti bhara, friendly chat style raho. Jab user specifically bole hindi ya english tabhi language badlo, warna Hinglish hi raho."
         )
 
-    payload = {
-        "model": "deepseek/deepseek-chat-v3-0324:free",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": question}
-        ],
-        "max_tokens": 200,
-        "temperature": 0.7
-    }
     try:
-        async with ClientSession(timeout=ClientTimeout(total=20)) as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
-                data = await resp.json()
-                if "choices" in data and data["choices"]:
-                    return data['choices'][0]['message']['content'].strip()
-                elif "error" in data:
-                    return f"Simran: API Error - {data['error']['message']}"
-                else:
-                    return "Simran: DeepSeek se sahi jawab nahi aaya!"
+        completion = client.chat.completions.create(
+            model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question}
+            ]
+        )
+        return completion.choices[0].message.content.strip()
     except Exception as e:
-        logger.error(f"DeepSeek error: {e}")
+        logger.error(f"NCompass error: {e}")
         return "Arey, Simran thoda busy ho gayi hai, baad me try karo ji!"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -226,7 +213,7 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # AI response: short, Hinglish by default
     user_mode = detect_lang_mode(user_message)
-    ai_reply = await ask_deepseek(user_message, user_mode)
+    ai_reply = await ask_ncompass(user_message, user_mode)
     stylish_reply = simran_style(user_message, ai_reply=ai_reply)
     await msg.reply_text(stylish_reply, parse_mode="Markdown")
 
