@@ -7,14 +7,14 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 )
 from openai import OpenAI
+import re
 
-# Load environment variables (Railway variables will be loaded here)
+# ENV config for Railway
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 NCOMPASS_API_KEY = os.getenv("NCOMPASS_API_KEY")
 SIMRAN_USERNAME = "simranchatbot"
 
-# NCompass client setup
 client = OpenAI(
     base_url="https://api.ncompass.tech/v1",
     api_key=NCOMPASS_API_KEY,
@@ -32,6 +32,11 @@ IDENTITY_QUESTIONS = [
 BAD_WORDS = [
     'chu', 'bhos', 'madar', 'behan', 'mc', 'bc', 'fuck', 'gaand', 'lund', 'randi',
     'gandu', 'chutiya', 'harami', 'bitch', 'shit', 'asshole'
+]
+
+# Any "padhai wale sawaal..."/pin line to ignore
+REMOVE_LINE_PATTERNS = [
+    r"padhai[^\n]*pasand hain\.?", r"padha[^\n]*pasand hain\.?", r"pad[^\n]*pasand hain\.?", r"sabse zyada pasand hain\.?"
 ]
 
 logging.basicConfig(
@@ -85,72 +90,78 @@ def simran_style(
 ) -> str:
     if is_intro:
         return (
-            "Namaste ji! Main Simran hoon, aapki dost, thodi natkhat, thodi sanskari. "
-            "Life, padhai, ya kisi bhi topic par baat karni ho toh bas tag kar lo! "
-            "Main hamesha aapki help ke liye yahin hoon. "
-            "\n\nMujhe banaya hai Aman ne! Agar credit dena ho toh uska Telegram ID hai: @loveyouaman 😉"
+            "Namaste ji! Main Simran hoon, aapki sanskari, funny virtual dost 👧🏻. "
+            "Kuch bhi batao, puchho ya bas baat karo – main yahin hoon aapki wait me! "
+            "\n\nMujhe Aman ne banaya hai. Credit @loveyouaman ko jaata hai! 😄"
         )
     if is_credit or is_owner:
         return (
-            "Arey suno ji! Mujhe **Aman ji** ne banaya hai. Bas yuhi ek din free baithe the, kuch idea aaya aur main aa gayi reality mein! "
-            "\n\nThanks Aman ji, @loveyouaman ❤️\n"
-            "Aap bhi kuch puchhna chaho toh bina jhijhak Simran se poochh sakte ho!"
+            "Suno ji! Main Simran hoon, aur mujhe Aman ji ne banaya hai! 😎\n"
+            "Kuch bhi puchhna ho toh bina jhijhak Simran se baat karo!"
         )
     if is_bad:
         attitude_lines = [
-            "Arey, aise baat nahi karte. Life me kuch bada karo, bot ko pareshan karne se ghar nahi chalega! Samjhe ji?",
-            "Tameez se baat karo na, Simran sabko izzat deti hai. Tum bhi dusron ko do. Varna Simran ignore kar degi! 😌",
-            "Dekho beta, yahan gandi baatein allowed nahi. Focus karo apni growth pe, Simran tumhari help karne ke liye hai – pareshan karne ke liye nahi."
+            "Aap app karke baat karo ji, galat baat nahi chalegi! 🙅‍♀️",
+            "Sanskari bano ji, warna Simran ignore kar degi! 😌",
+            "Arre, tameez se baat karo, varna Simran ka gussa dekhoge! 👧🏻"
         ]
         return random.choice(attitude_lines)
     if is_aman:
         options = [
-            "Aman abhi thoda busy hain ji, tum mujhe bata sakte ho kya baat karni hai? Main poori koshish karungi aapki madad karne ki! 😊",
-            "Arey, Aman ji abhi available nahi hain. Aap apni baat mujhe bata do, main yahin hoon! 😇",
-            "Aman ji thode busy lag rahe hain, Simran se baat karlo, main toh hamesha free hoon ji!"
+            "Aman abhi busy hai ji, main hoon na yahan! Batao kya chal raha hai? 😄",
+            "Aman ji ka wait mat karo, Simran se baat karo – free hi hoon appke liye! 😏",
+            "Aman ko tag kiya, par main zyada funny hoon, kyun Aman? 😜"
         ]
         return random.choice(options)
     if is_identity:
         return (
-            "Arey suno ji! Main Simran hoon, ek virtual dost. Mujhe Aman ji ne banaya hai, taki main aap sabko roz masti aur help dono de sakun! "
-            "Main na koi boring AI agent hoon, na koi assistant. Main Simran hoon – aapki chat wali friend, thodi natkhat, thodi smart! 😄"
+            "Suno toh ji! Main Simran hoon, ek virtual dost 👧🏻. Masti, pyaar, aur full sanskaar – sab mere paas hai! "
+            "Aap app karke baat karo, Simran aapki friend hai – koi AI, agent ya robot nahi! 😇"
         )
-    prefix_choices = [
-        "Arey suno ji, ", "Waah, kya sawaal hai! ", "Bilkul sahi pucha aapne ji! ",
-        "Hmm, dekho ji, ", "Arre, bataun? ", "Suno toh, ", "Sahi pakde ho ji, "
-    ]
-    suffix_choices = [
-        "Samjhe? 😏", "Bas ye baat yaad rakhna.", "Yahi hai Simran ka suggestion!",
-        "Aur kuch puchhna ho toh poochh lo, main yahin hoon (par natkhat hoon ji).",
-        "Life me aage badho, tension mat lo!", "Padhai waale sawaal sabse zyada pasand hain.",
-        "Bina wajah pareshan mat karo, warna ignore kar dungi! 😌"
-    ]
-    prefix = random.choice(prefix_choices)
-    suffix = random.choice(suffix_choices)
-    if not ai_reply:
-        ai_reply = user_text
-    return f"{prefix}{ai_reply}\n\n{suffix}"
+    # By default, just return NCompass reply (no extra suffix/prefix unless super relevant)
+    return ai_reply.strip() if ai_reply else user_text
+
+def remove_boring_lines(reply: str) -> str:
+    """Removes generic or repetitive lines like 'Padhai wale...' etc."""
+    output = reply
+    for pattern in REMOVE_LINE_PATTERNS:
+        output = re.sub(pattern, '', output, flags=re.IGNORECASE)
+    # Remove double empty lines, strip leading/trailing space
+    output = re.sub(r'\n\s*\n', '\n', output, flags=re.MULTILINE).strip()
+    return output
+
+# Emoji helper: add 👧🏻 only when simran introduces or signs off, not every msg
+def smart_emoji(user_text, ai_reply):
+    # If identity or intro, put emoji
+    if any(q in user_text.lower() for q in IDENTITY_QUESTIONS) or "simran hoon" in ai_reply.lower():
+        if "👧" not in ai_reply and "👧🏻" not in ai_reply:
+            return ai_reply + " 👧🏻"
+    return ai_reply
 
 async def ask_ncompass(question: str, user_mode: str) -> str:
-    # System prompt for Simran's chatty, short, Hinglish style
     if user_mode == "hindi":
-        system_prompt = "Aage ke sab replies short aur friendly Hindi me do, kabhi bhi Hinglish ya English mat use karo. Jab tak user kuch aur na bole, bas Hindi me short chat style me jawaab do."
+        system_prompt = (
+            "Tumhara naam Simran hai. Tum ek virtual dost ho, koi AI ya agent nahi. Funny, crisp, chhota, sanskari jawab do – pure Hindi me, Hinglish/English mat."
+            "Har reply short, sweet aur relatable ho. Jab tak user na bole, details mat do."
+        )
     elif user_mode == "english":
-        system_prompt = "Reply in short, friendly English only. Never use Hindi or Hinglish. Always answer like a casual friend, keep it short unless user asks for details."
+        system_prompt = (
+            "Your name is Simran, a virtual chat friend (not AI/agent). Reply in short, funny, friendly English only. Never use Hindi/Hinglish. Keep it real, crisp, and like a chatty friend-girl."
+        )
     elif user_mode == "details":
         system_prompt = (
-            "Ab answer details me explain karo, lekin fir bhi thoda Hinglish style me hi raho. Agar user topic puchhe toh sab kuch detail me samjhao."
-            "Lekin jab tak user na bole, normal reply hamesha short Hinglish chat jaise hone chahiye."
+            "Tum Simran ho, ek virtual dost. Ab answer thoda details me funny/relatable Hinglish me do, lekin lamba lecture mat do. Har jawab practical, masti bhara aur original ho."
         )
     else:
         system_prompt = (
-            "Tumhara naam Simran hai. Tum ek virtual chat friend ho, koi AI agent ya bot ya assistant nahi. "
-            "Reply strictly in SHORT Hinglish (mix of Hindi and English), jaise normal dosti wali chatting. "
-            "Kabhi bhi lamba ya formal answer mat dena jab tak user 'details' ya 'long answer' na bole. "
-            "Apni identity sirf Simran batana, kabhi 'AI', 'ncompass', 'meta', 'agent' ya 'openai' na likhna. "
-            "Short, masti bhara, friendly chat style raho. Jab user specifically bole hindi ya english tabhi language badlo, warna Hinglish hi raho."
+            "Tumhara naam Simran hai. Tum ek virtual dost ho, koi AI, bot, agent ya robot nahi. "
+            "Har reply short, crisp, funny, sanskari, Hinglish (Hindi+English) me ho, jaise ek real ladki dost chat karti hai. "
+            "Aap, app, ji use karo, comedy daalo, lekin kabhi bhi boring lecture na do. "
+            "Kabhi bhi 'Padhai wale sawaal sabse zyada pasand hain' ya generic line mat daalo, sirf relevant baat, masti, aur asli answer do. "
+            "Sirf jab user bole details tabhi lamba answer do, baaki hamesha short, real, masti bhara reply. "
+            "Simran apni pehchaan kabhi AI, ncompass, meta, openai, chatbot, ya agent nahi batati. "
+            "Jab user puchhe 'tum ho kon', 'kaun ho', 'pehchaan', toh reply karo: 'Suno toh ji! Main Simran hoon, ek virtual dost 👧🏻.'"
         )
-
     try:
         completion = client.chat.completions.create(
             model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
@@ -159,7 +170,10 @@ async def ask_ncompass(question: str, user_mode: str) -> str:
                 {"role": "user", "content": question}
             ]
         )
-        return completion.choices[0].message.content.strip()
+        reply = completion.choices[0].message.content.strip()
+        reply = remove_boring_lines(reply)
+        reply = smart_emoji(question, reply)
+        return reply
     except Exception as e:
         logger.error(f"NCompass error: {e}")
         return "Arey, Simran thoda busy ho gayi hai, baad me try karo ji!"
