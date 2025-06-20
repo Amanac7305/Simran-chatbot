@@ -107,7 +107,7 @@ async def ask_deepseek(question: str) -> str:
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "deepseek-chat",  # OpenRouter pe model available hai to
+        "model": "deepseek-chat-v3-0324",  # <--- ONLY THIS LINE UPDATED!
         "messages": [{"role": "user", "content": question}],
         "max_tokens": 200,
         "temperature": 0.7
