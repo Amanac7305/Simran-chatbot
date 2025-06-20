@@ -12,9 +12,11 @@ load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 SIMRAN_USERNAME = "simranchatbot"
-AMAN_CREDIT = (
-    "Mujhe banaya hai Aman ne! Agar credit dena ho toh uska Telegram ID hai: @loveyouaman 😉"
-)
+AMAN_NAMES = ["aman", "@loveyouaman"]  # Add more if needed
+OWNER_KEYWORDS = [
+    "founder", "owner", "creator", "bf", "boyfriend", "banaya", 
+    "dost", "friend", "frd", "father", "maker", "develop", "creator"
+]
 
 BAD_WORDS = [
     'chu', 'bhos', 'madar', 'behan', 'mc', 'bc', 'fuck', 'gaand', 'lund', 'randi',
@@ -30,22 +32,44 @@ def is_bad_message(text: str) -> bool:
     text_lower = text.lower()
     return any(bad in text_lower for bad in BAD_WORDS)
 
+def is_simran_mentioned(text: str) -> bool:
+    text_lower = text.lower()
+    return (
+        "simran" in text_lower or
+        "simranchatbot" in text_lower or
+        "@simranchatbot" in text_lower
+    )
+
+def is_aman_mentioned(text: str) -> bool:
+    text_lower = text.lower()
+    return any(name in text_lower for name in AMAN_NAMES)
+
+def is_owner_question(text: str) -> bool:
+    text_lower = text.lower()
+    return any(word in text_lower for word in OWNER_KEYWORDS)
+
 def simran_style(
     user_text="",
     ai_reply=None,
     is_intro=False,
     is_credit=False,
-    is_bad=False
+    is_bad=False,
+    is_aman=False,
+    is_owner=False
 ) -> str:
     if is_intro:
         return (
             "Namaste ji! Main Simran hoon, aapki dost, thodi natkhat, thodi sanskari. "
             "Life, padhai, ya kisi bhi topic par baat karni ho toh bas tag kar lo! "
             "Main hamesha aapki help ke liye yahin hoon. "
-            "\n\n" + AMAN_CREDIT
+            "\n\nMujhe banaya hai Aman ne! Agar credit dena ho toh uska Telegram ID hai: @loveyouaman 😉"
         )
-    if is_credit:
-        return AMAN_CREDIT
+    if is_credit or is_owner:
+        return (
+            "Arey suno ji! Mujhe **Aman ji** ne banaya hai. Bas yuhi ek din free baithe the, kuch idea aaya aur main aa gayi reality mein! "
+            "\n\nThanks Aman ji, @loveyouaman ❤️\n"
+            "Aap bhi kuch puchhna chaho toh bina jhijhak Simran se poochh sakte ho!"
+        )
     if is_bad:
         attitude_lines = [
             "Arey, aise baat nahi karte. Life me kuch bada karo, bot ko pareshan karne se ghar nahi chalega! Samjhe ji?",
@@ -53,6 +77,13 @@ def simran_style(
             "Dekho beta, yahan gandi baatein allowed nahi. Focus karo apni growth pe, Simran tumhari help karne ke liye hai – pareshan karne ke liye nahi."
         ]
         return random.choice(attitude_lines)
+    if is_aman:
+        options = [
+            "Aman abhi thoda busy hain ji, tum mujhe bata sakte ho kya baat karni hai? Main poori koshish karungi aapki madad karne ki! 😊",
+            "Arey, Aman ji abhi available nahi hain. Aap apni baat mujhe bata do, main yahin hoon! 😇",
+            "Aman ji thode busy lag rahe hain, Simran se baat karlo, main toh hamesha free hoon ji!"
+        ]
+        return random.choice(options)
     prefix_choices = [
         "Arey suno ji, ", "Waah, kya sawaal hai! ", "Bilkul sahi pucha aapne ji! ",
         "Hmm, dekho ji, ", "Arre, bataun? ", "Suno toh, ", "Sahi pakde ho ji, "
@@ -91,7 +122,7 @@ async def ask_deepseek(question: str) -> str:
         return "Arey, Simran thoda busy ho gayi hai, baad me try karo ji!"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(simran_style(is_intro=True))
+    await update.message.reply_text(simran_style(is_intro=True), parse_mode="Markdown")
 
 async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -99,34 +130,43 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     user_message = msg.text
 
-    # Group me sirf tab reply karo jab koi Simran ke msg ko reply kare (swipe/reply)
+    # Group me: Simran tabhi reply kare jab
+    # 1. Usko reply kare (swipe/reply) ya
+    # 2. "simran", "simranchatbot", "@simranchatbot" ya "aman" likha ho
     if msg.chat.type in ["group", "supergroup"]:
-        if not msg.reply_to_message:
-            return
-        # Check karo kya reply kiya gaya message Simran ka hai
-        if (
-            not msg.reply_to_message.from_user or
-            not msg.reply_to_message.from_user.is_bot or
-            msg.reply_to_message.from_user.username is None or
-            msg.reply_to_message.from_user.username.lower() != SIMRAN_USERNAME.lower()
-        ):
+        trigger = (
+            is_simran_mentioned(user_message) or
+            is_aman_mentioned(user_message)
+        )
+        reply_to_simran = (
+            msg.reply_to_message
+            and msg.reply_to_message.from_user
+            and msg.reply_to_message.from_user.is_bot
+            and msg.reply_to_message.from_user.username
+            and msg.reply_to_message.from_user.username.lower() == SIMRAN_USERNAME.lower()
+        )
+        if not (trigger or reply_to_simran):
             return
 
-    # Credit/creator
-    ask_credit = any(word in user_message.lower() for word in ["creator", "banaya", "credit", "aman"])
-    if ask_credit:
-        await msg.reply_text(simran_style(is_credit=True))
+    # Aman trigger
+    if is_aman_mentioned(user_message):
+        await msg.reply_text(simran_style(is_aman=True), parse_mode="Markdown")
+        return
+
+    # Owner/founder/credit trigger
+    if is_owner_question(user_message):
+        await msg.reply_text(simran_style(is_owner=True), parse_mode="Markdown")
         return
 
     # Bad words
     if is_bad_message(user_message):
-        await msg.reply_text(simran_style(is_bad=True))
+        await msg.reply_text(simran_style(is_bad=True), parse_mode="Markdown")
         return
 
     # AI response
     ai_reply = await ask_deepseek(user_message)
     stylish_reply = simran_style(user_message, ai_reply=ai_reply)
-    await msg.reply_text(stylish_reply)
+    await msg.reply_text(stylish_reply, parse_mode="Markdown")
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
