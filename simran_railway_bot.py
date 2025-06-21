@@ -1,97 +1,259 @@
-import os, re, requests
+import os
+import random
+import logging
+import re
 from dotenv import load_dotenv
 from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+)
 from telegram.constants import ChatAction
+from openai import OpenAI
 from collections import defaultdict, deque
-import openai
 
+# ENV config for Railway
 load_dotenv()
-
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 NCOMPASS_API_KEY = os.getenv("NCOMPASS_API_KEY")
+SIMRAN_USERNAME = "simranchatbot"
 
-BOT_USERNAME = "simranchatbot"
-
-client = openai.OpenAI(
+client = OpenAI(
     base_url="https://api.ncompass.tech/v1",
-    api_key=NCOMPASS_API_KEY
+    api_key=NCOMPASS_API_KEY,
 )
 
+# Per-user short-term memory (last 5 messages)
 USER_HISTORY = defaultdict(lambda: deque(maxlen=5))
 
-def is_mentioned(update: Update) -> bool:
-    if not update.message or not update.message.text:
-        return False
-    text = update.message.text.lower()
-    return "simran" in text or f"@{BOT_USERNAME}" in text or (
-        update.message.reply_to_message
-        and update.message.reply_to_message.from_user.username.lower() == BOT_USERNAME
+AMAN_NAMES = ["aman", "@loveyouaman"]
+OWNER_KEYWORDS = [
+    "founder", "owner", "creator", "bf", "boyfriend", "banaya",
+    "dost", "friend", "frd", "father", "maker", "develop", "creator"
+]
+IDENTITY_QUESTIONS = [
+    "tum ho kon", "kaun ho", "who are you", "apni pehchaan", "identity", "kaun si ai ho", "aap kaun ho"
+]
+
+BAD_WORDS = [
+    'chu', 'bhos', 'madar', 'behan', 'mc', 'bc', 'fuck', 'gaand', 'lund', 'randi',
+    'gandu', 'chutiya', 'harami', 'bitch', 'shit', 'asshole'
+]
+
+REMOVE_LINE_PATTERNS = [
+    r"padhai[^\n]*pasand hain\.?", r"padha[^\n]*pasand hain\.?", r"pad[^\n]*pasand hain\.?", r"sabse zyada pasand hain\.?"
+]
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
+def is_bad_message(text: str) -> bool:
+    text_lower = text.lower()
+    return any(bad in text_lower for bad in BAD_WORDS)
+
+def is_simran_mentioned(text: str) -> bool:
+    text_lower = text.lower()
+    return (
+        "simran" in text_lower or
+        "simranchatbot" in text_lower or
+        "@simranchatbot" in text_lower
     )
 
-def is_play_command(text):
-    return re.match(r"^(play|/play)\s+.+", text.strip(), re.IGNORECASE)
+def is_aman_mentioned(text: str) -> bool:
+    text_lower = text.lower()
+    return any(name in text_lower for name in AMAN_NAMES)
 
-def extract_song_name(text):
-    match = re.match(r"^(play|/play)\s+(.+)", text.strip(), re.IGNORECASE)
-    return match.group(2).strip() if match else None
+def is_owner_question(text: str) -> bool:
+    text_lower = text.lower()
+    return any(word in text_lower for word in OWNER_KEYWORDS)
 
-def get_song_url(song):
+def is_identity_question(text: str) -> bool:
+    text_lower = text.lower()
+    return any(q in text_lower for q in IDENTITY_QUESTIONS)
+
+def detect_lang_mode(user_text):
+    txt = user_text.lower()
+    if "hindi me batao" in txt or "hindi mein batao" in txt or "hindi me samjhao" in txt:
+        return "hindi"
+    if "english me batao" in txt or "english mein batao" in txt or "english me samjhao" in txt:
+        return "english"
+    if "details me batao" in txt or "long answer" in txt or "detail" in txt or "explain" in txt:
+        return "details"
+    return "default"
+
+def simran_style(
+    user_text="",
+    ai_reply=None,
+    is_intro=False,
+    is_credit=False,
+    is_bad=False,
+    is_aman=False,
+    is_owner=False,
+    is_identity=False
+) -> str:
+    if is_intro:
+        return (
+            "Namaste ji! Main Simran hoon, aapki sanskari, funny virtual dost 👧🏻. "
+            "Kuch bhi batao, puchho ya bas baat karo – main yahin hoon aapki wait me! "
+            "\n\nMujhe Aman ne banaya hai. Credit @loveyouaman ko jaata hai! 😄"
+        )
+    if is_credit or is_owner:
+        return (
+            "Suno ji! Main Simran hoon, aur mujhe Aman ji ne banaya hai! 😎\n"
+            "Kuch bhi puchhna ho toh bina jhijhak Simran se baat karo!"
+        )
+    if is_bad:
+        attitude_lines = [
+            "Aap app karke baat karo ji, galat baat nahi chalegi! 🙅‍♀️",
+            "Sanskari bano ji, warna Simran ignore kar degi! 😌",
+            "Arre, tameez se baat karo, varna Simran ka gussa dekhoge! 👧🏻"
+        ]
+        return random.choice(attitude_lines)
+    if is_aman:
+        options = [
+            "Aman abhi busy hai ji, main hoon na yahan! Batao kya chal raha hai? 😄",
+            "Aman ji ka wait mat karo, Simran se baat karo – free hi hoon appke liye! 😏",
+            "Aman ko tag kiya, par main zyada funny hoon, kyun Aman? 😜"
+        ]
+        return random.choice(options)
+    if is_identity:
+        return (
+            "Suno toh ji! Main Simran hoon, ek virtual dost 👧🏻. Masti, pyaar, aur full sanskaar – sab mere paas hai! "
+            "Aap app karke baat karo, Simran aapki friend hai – koi AI, agent ya robot nahi! 😇"
+        )
+    return ai_reply.strip() if ai_reply else user_text
+
+def remove_boring_lines(reply: str) -> str:
+    output = reply
+    for pattern in REMOVE_LINE_PATTERNS:
+        output = re.sub(pattern, '', output, flags=re.IGNORECASE)
+    output = re.sub(r'\n\s*\n', '\n', output, flags=re.MULTILINE).strip()
+    return output
+
+def smart_emoji(user_text, ai_reply):
+    if any(q in user_text.lower() for q in IDENTITY_QUESTIONS) or "simran hoon" in ai_reply.lower():
+        if "👧" not in ai_reply and "👧🏻" not in ai_reply:
+            return ai_reply + " 👧🏻"
+    return ai_reply
+
+def build_ncompass_context(user_id):
+    # returns a list of previous messages for this user, in ncompass format
+    history = list(USER_HISTORY[user_id])
+    context_msgs = []
+    for entry in history:
+        context_msgs.append({"role": "user", "content": entry})
+    return context_msgs
+
+async def ask_ncompass(question: str, user_mode: str, user_id=None) -> str:
+    if user_mode == "hindi":
+        system_prompt = (
+            "Tumhara naam Simran hai. Tum ek virtual dost ho, koi AI ya agent nahi. Funny, crisp, chhota, sanskari jawab do – pure Hindi me, Hinglish/English mat."
+            "Har reply short, sweet aur relatable ho. Jab tak user na bole, details mat do."
+        )
+    elif user_mode == "english":
+        system_prompt = (
+            "Your name is Simran, a virtual chat friend (not AI/agent). Reply in short, funny, friendly English only. Never use Hindi/Hinglish. Keep it real, crisp, and like a chatty friend-girl."
+        )
+    elif user_mode == "details":
+        system_prompt = (
+            "Tum Simran ho, ek virtual dost. Ab answer thoda details me funny/relatable Hinglish me do, lekin lamba lecture mat do. Har jawab practical, masti bhara aur original ho."
+        )
+    else:
+        system_prompt = (
+            "Tumhara naam Simran hai. Tum ek virtual dost ho, koi AI, bot, agent ya robot nahi. "
+            "Har reply short, crisp, funny, sanskari, Hinglish (Hindi+English) me ho, jaise ek real ladki dost chat karti hai. "
+            "Aap, app, ji use karo, comedy daalo, lekin kabhi bhi boring lecture na do. "
+            "Kabhi bhi 'Padhai wale sawaal sabse zyada pasand hain' ya generic line mat daalo, sirf relevant baat, masti, aur asli answer do. "
+            "Sirf jab user bole details tabhi lamba answer do, baaki hamesha short, real, masti bhara reply. "
+            "Simran apni pehchaan kabhi AI, ncompass, meta, openai, chatbot, ya agent nahi batati. "
+            "Jab user puchhe 'tum ho kon', 'kaun ho', 'pehchaan', toh reply karo: 'Suno toh ji! Main Simran hoon, ek virtual dost 👧🏻.'"
+        )
     try:
-        r = requests.get(f"https://saavn.dev/api/search/songs?query={song}", timeout=10)
-        res = r.json()
-        songs = res.get("data", {}).get("results", [])
-        if not songs:
-            return None
-        return songs[0]["downloadUrl"][-1]["link"]
-    except:
-        return None
+        context_msgs = build_ncompass_context(user_id) if user_id else []
+        messages = [
+            {"role": "system", "content": system_prompt},
+            *context_msgs,
+            {"role": "user", "content": question}
+        ]
+        completion = client.chat.completions.create(
+            model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+            messages=messages
+        )
+        reply = completion.choices[0].message.content.strip()
+        reply = remove_boring_lines(reply)
+        reply = smart_emoji(question, reply)
+        return reply
+    except Exception as e:
+        logger.error(f"NCompass error: {e}")
+        return "Arey, Simran thoda busy ho gayi hai, baad me try karo ji!"
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(simran_style(is_intro=True), parse_mode="Markdown")
+
+async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg or not msg.text:
         return
-    text = msg.text.strip()
+    user_message = msg.text
     user_id = msg.from_user.id
 
-    if not is_mentioned(update):
-        return
-
+    # Typing... action (har reply se pehle)
     await msg.chat.send_action(action=ChatAction.TYPING)
 
-    if is_play_command(text):
-        song_name = extract_song_name(text)
-        if song_name:
-            url = get_song_url(song_name)
-            if url:
-                await msg.reply_audio(audio=url, title=song_name)
-            else:
-                await msg.reply_text("Kuch nahi mila... aur kuch try karo 🎵")
+    # Group me: Simran tabhi reply kare jab
+    # 1. Usko reply kare (swipe/reply) ya
+    # 2. "simran", "simranchatbot", "@simranchatbot" ya "aman" likha ho
+    if msg.chat.type in ["group", "supergroup"]:
+        trigger = (
+            is_simran_mentioned(user_message) or
+            is_aman_mentioned(user_message)
+        )
+        reply_to_simran = (
+            msg.reply_to_message
+            and msg.reply_to_message.from_user
+            and msg.reply_to_message.from_user.is_bot
+            and msg.reply_to_message.from_user.username
+            and msg.reply_to_message.from_user.username.lower() == SIMRAN_USERNAME.lower()
+        )
+        if not (trigger or reply_to_simran):
+            return
+
+    # Aman trigger
+    if is_aman_mentioned(user_message):
+        await msg.reply_text(simran_style(is_aman=True), parse_mode="Markdown")
         return
 
-    USER_HISTORY[user_id].append(text)
+    # Owner/founder/credit trigger
+    if is_owner_question(user_message):
+        await msg.reply_text(simran_style(is_owner=True), parse_mode="Markdown")
+        return
 
-    try:
-        completion = client.chat.completions.create(
-            model="meta-llama/Llama-3-8B-Instruct",
-            messages=[
-                {"role": "system", "content": "Tum Simran ho — Ranchi ki fun, witty ladki ho. Hamesha Hinglish mein short, crisp aur funny replies do. Respectful aur thoda masti bhari tone mein answer do. Boring kabhi nahi banna."},
-                *[
-                    {"role": "user", "content": x}
-                    for x in USER_HISTORY[user_id]
-                ]
-            ]
-        )
-        reply = completion.choices[0].message.content.strip()
-        await msg.reply_text(reply)
-    except Exception as e:
-        await msg.reply_text("Simran thoda busy hai, baad me puchho 😶")
+    # Identity/Who are you trigger
+    if is_identity_question(user_message):
+        await msg.reply_text(simran_style(is_identity=True), parse_mode="Markdown")
+        return
+
+    # Bad words
+    if is_bad_message(user_message):
+        await msg.reply_text(simran_style(is_bad=True), parse_mode="Markdown")
+        return
+
+    # MEMORY: Save user's message in history before reply (for context)
+    USER_HISTORY[user_id].append(user_message)
+
+    # AI response: short, Hinglish by default, with previous history
+    user_mode = detect_lang_mode(user_message)
+    ai_reply = await ask_ncompass(user_message, user_mode, user_id=user_id)
+    stylish_reply = simran_style(user_message, ai_reply=ai_reply)
+    await msg.reply_text(stylish_reply, parse_mode="Markdown")
 
 def main():
-    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT, handle_message))
-    print("Simran is online ✅")
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), reply))
+    logger.info("Simran Bot is running (Railway ready)!")
     app.run_polling()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
