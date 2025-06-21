@@ -28,8 +28,6 @@ AMAN_NAMES = ["aman", "@loveyouaman"]
 OWNER_KEYWORDS = ["founder", "owner", "creator", "bf", "boyfriend", "banaya", "dost", "friend", "frd", "father", "maker", "develop", "creator"]
 IDENTITY_QUESTIONS = ["tum ho kon", "kaun ho", "who are you", "apni pehchaan", "identity", "kaun si ai ho", "aap kaun ho"]
 BAD_WORDS = ['chu', 'bhos', 'madar', 'behan', 'mc', 'bc', 'fuck', 'gaand', 'lund', 'randi', 'gandu', 'chutiya', 'harami', 'bitch', 'shit', 'asshole']
-REMOVE_LINE_PATTERNS = [r"padhai[^\n]*pasand hain\\.?", r"padha[^\n]*pasand hain\\.?", r"pad[^\n]*pasand hain\\.?", r"sabse zyada pasand hain\\.?"]
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
