@@ -3,64 +3,52 @@ import random
 import logging
 import re
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import Update, ChatPermissions
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 )
-from telegram.constants import ChatAction
+from telegram.constants import ChatAction, ParseMode
 from openai import OpenAI
 from collections import defaultdict, deque
+from datetime import datetime, timedelta
 
-# ENV config for Railway
+# ENV config
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 NCOMPASS_API_KEY = os.getenv("NCOMPASS_API_KEY")
 SIMRAN_USERNAME = "simranchatbot"
 
-client = OpenAI(
-    base_url="https://api.ncompass.tech/v1",
-    api_key=NCOMPASS_API_KEY,
-)
+client = OpenAI(base_url="https://api.ncompass.tech/v1", api_key=NCOMPASS_API_KEY)
 
 USER_HISTORY = defaultdict(lambda: deque(maxlen=5))
+USER_XP = defaultdict(int)
+USER_LOGS = {}
 
 AMAN_NAMES = ["aman", "@loveyouaman"]
-OWNER_KEYWORDS = [
-    "founder", "owner", "creator", "bf", "boyfriend", "banaya",
-    "dost", "friend", "frd", "father", "maker", "develop", "creator"
-]
-IDENTITY_QUESTIONS = [
-    "tum ho kon", "kaun ho", "who are you", "apni pehchaan", "identity", "kaun si ai ho", "aap kaun ho"
-]
+OWNER_KEYWORDS = ["founder", "owner", "creator", "bf", "boyfriend", "banaya", "dost", "friend", "frd", "father", "maker", "develop", "creator"]
+IDENTITY_QUESTIONS = ["tum ho kon", "kaun ho", "who are you", "apni pehchaan", "identity", "kaun si ai ho", "aap kaun ho"]
+BAD_WORDS = ['chu', 'bhos', 'madar', 'behan', 'mc', 'bc', 'fuck', 'gaand', 'lund', 'randi', 'gandu', 'chutiya', 'harami', 'bitch', 'shit', 'asshole']
+REMOVE_LINE_PATTERNS = [r"padhai[^\n]*pasand hain\\.?", r"padha[^\n]*pasand hain\\.?", r"pad[^\n]*pasand hain\\.?", r"sabse zyada pasand hain\\.?"]
 
-BAD_WORDS = [
-    'chu', 'bhos', 'madar', 'behan', 'mc', 'bc', 'fuck', 'gaand', 'lund', 'randi',
-    'gandu', 'chutiya', 'harami', 'bitch', 'shit', 'asshole'
-]
-
-REMOVE_LINE_PATTERNS = [
-    r"padhai[^\n]*pasand hain\.?", r"padha[^\n]*pasand hain\.?", r"pad[^\n]*pasand hain\.?", r"sabse zyada pasand hain\.?"
-]
-
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def is_bad_message(text: str) -> bool:
+# Utility Functions
+
+def is_bad_message(text):
     return any(bad in text.lower() for bad in BAD_WORDS)
 
-def is_simran_mentioned(text: str) -> bool:
+def is_simran_mentioned(text):
     text = text.lower()
     return "simran" in text or "simranchatbot" in text or "@simranchatbot" in text
 
-def is_aman_mentioned(text: str) -> bool:
+def is_aman_mentioned(text):
     return any(name in text.lower() for name in AMAN_NAMES)
 
-def is_owner_question(text: str) -> bool:
+def is_owner_question(text):
     return any(word in text.lower() for word in OWNER_KEYWORDS)
 
-def is_identity_question(text: str) -> bool:
+def is_identity_question(text):
     return any(q in text.lower() for q in IDENTITY_QUESTIONS)
 
 def detect_lang_mode(user_text):
@@ -73,19 +61,11 @@ def detect_lang_mode(user_text):
         return "details"
     return "default"
 
-def simran_style(user_text="", ai_reply=None, is_intro=False, is_credit=False,
-                 is_bad=False, is_aman=False, is_owner=False, is_identity=False) -> str:
+def simran_style(user_text="", ai_reply=None, is_intro=False, is_credit=False, is_bad=False, is_aman=False, is_owner=False, is_identity=False):
     if is_intro:
-        return (
-            "Namaste ji! Main Simran hoon, aapki sanskari, funny virtual dost 👧🏻. "
-            "Kuch bhi batao, puchho ya bas baat karo – main yahin hoon aapki wait me! \n\n"
-            "Mujhe Aman ne banaya hai. Credit @loveyouaman ko jaata hai! 😄"
-        )
+        return "Namaste ji! Main Simran hoon, aapki sanskari, funny virtual dost 👧🏻.\nMujhe Aman ne banaya hai. Credit @loveyouaman ko jaata hai! 😄"
     if is_credit or is_owner:
-        return (
-            "Suno ji! Main Simran hoon, aur mujhe Aman ji ne banaya hai! 😎\n"
-            "Kuch bhi puchhna ho toh bina jhijhak Simran se baat karo!"
-        )
+        return "Suno ji! Main Simran hoon, aur mujhe Aman ji ne banaya hai! 😎"
     if is_bad:
         return random.choice([
             "Aap app karke baat karo ji, galat baat nahi chalegi! 🙅‍♀️",
@@ -94,18 +74,15 @@ def simran_style(user_text="", ai_reply=None, is_intro=False, is_credit=False,
         ])
     if is_aman:
         return random.choice([
-            "Aman abhi busy hai ji, main hoon na yahan! Batao kya chal raha hai? 😄",
-            "Aman ji ka wait mat karo, Simran se baat karo – free hi hoon appke liye! 😏",
-            "Aman ko tag kiya, par main zyada funny hoon, kyun Aman? 😜"
+            "Aman abhi busy hai ji, main hoon na yahan! 😄",
+            "Aman ji ka wait mat karo, Simran se baat karo! 😏",
+            "Aman ko tag kiya, par main zyada funny hoon 😜"
         ])
     if is_identity:
-        return (
-            "Suno toh ji! Main Simran hoon, ek virtual dost 👧🏻. Masti, pyaar, aur full sanskaar – sab mere paas hai! "
-            "Aap app karke baat karo, Simran aapki friend hai – koi AI, agent ya robot nahi! 😇"
-        )
+        return "Suno toh ji! Main Simran hoon, ek virtual dost 👧🏻. Aap app karke baat karo, Simran aapki friend hai – koi AI, agent ya robot nahi! 😇"
     return ai_reply.strip() if ai_reply else user_text
 
-def remove_boring_lines(reply: str) -> str:
+def remove_boring_lines(reply):
     for pattern in REMOVE_LINE_PATTERNS:
         reply = re.sub(pattern, '', reply, flags=re.IGNORECASE)
     return re.sub(r'\n\s*\n', '\n', reply, flags=re.MULTILINE).strip()
@@ -119,24 +96,14 @@ def smart_emoji(user_text, ai_reply):
 def build_ncompass_context(user_id):
     return [{"role": "user", "content": msg} for msg in USER_HISTORY[user_id]]
 
-async def ask_ncompass(question: str, user_mode: str, user_id=None) -> str:
-    if user_mode == "hindi":
-        system_prompt = (
-            "Tumhara naam Simran hai. Tum ek virtual dost ho, koi AI ya agent nahi. Funny, crisp, chhota, sanskari jawab do – pure Hindi me."
-        )
-    elif user_mode == "english":
-        system_prompt = (
-            "Your name is Simran, a virtual chat friend (not AI/agent). Reply in short, funny, friendly English only. Never use Hindi/Hinglish."
-        )
-    elif user_mode == "details":
-        system_prompt = (
-            "Tum Simran ho, ek virtual dost. Answer thoda detail me funny/relatable Hinglish me do. Practical aur masti bhara jawab do."
-        )
-    else:
-        system_prompt = (
-            "Tumhara naam Simran hai. Tum ek virtual dost ho. Har reply short, crisp, funny, sanskari Hinglish me ho. "
-            "Never say you're AI, chatbot, OpenAI, or agent. Jab user bole 'tum ho kon', tab bolo: 'Main Simran hoon, ek virtual dost 👧🏻.'"
-        )
+async def ask_ncompass(question, user_mode, user_id=None):
+    system_prompt = {
+        "hindi": "Tumhara naam Simran hai. Tum ek virtual dost ho. Pure Hindi me crisp jawab do.",
+        "english": "Your name is Simran. Reply like a real girl-friend in English. Be funny, short.",
+        "details": "Simran ho. Detailed, funny Hinglish reply do. Na lecture, na boring.",
+        "default": "Tum Simran ho. Crisp, funny, Hinglish me reply karo. AI/agent mat bolna kabhi bhi."
+    }.get(user_mode, user_mode)
+
     try:
         messages = [{"role": "system", "content": system_prompt}]
         if user_id:
@@ -148,12 +115,85 @@ async def ask_ncompass(question: str, user_mode: str, user_id=None) -> str:
             messages=messages
         )
         reply = completion.choices[0].message.content.strip()
-        reply = remove_boring_lines(reply)
-        return smart_emoji(question, reply)
+        return smart_emoji(question, remove_boring_lines(reply))
     except Exception as e:
         logger.error(f"NCompass error: {e}")
         return "Arey, Simran thoda busy ho gayi hai, baad me try karo ji!"
 
+# ADMIN FEATURES
+async def get_admins(update):
+    return await update.message.chat.get_administrators()
+
+def get_replied_user(update):
+    if update.message and update.message.reply_to_message:
+        return update.message.reply_to_message.from_user
+    return None
+
+async def pin(update, context):
+    if update.message.reply_to_message:
+        await update.message.chat.pin_message(update.message.reply_to_message.message_id)
+        await update.message.reply_text("Pinned! 📌")
+
+async def dpin(update, context):
+    await update.message.chat.unpin_all_messages()
+    await update.message.reply_text("All messages unpinned.")
+
+async def ban(update, context):
+    user = get_replied_user(update)
+    if user:
+        await update.message.chat.ban_member(user.id)
+        await update.message.reply_text(f"{user.first_name} banned!")
+
+async def kick(update, context):
+    user = get_replied_user(update)
+    if user:
+        await update.message.chat.ban_member(user.id)
+        await update.message.chat.unban_member(user.id)
+        await update.message.reply_text(f"{user.first_name} kicked!")
+
+async def mute(update, context):
+    user = get_replied_user(update)
+    if user:
+        until = datetime.utcnow() + timedelta(hours=1)
+        await update.message.chat.restrict_member(user.id, ChatPermissions(), until_date=until)
+        await update.message.reply_text(f"{user.first_name} muted for 1hr!")
+
+async def unmute(update, context):
+    user = get_replied_user(update)
+    if user:
+        await update.message.chat.restrict_member(user.id, ChatPermissions(can_send_messages=True))
+        await update.message.reply_text(f"{user.first_name} unmuted!")
+
+async def admins(update, context):
+    names = [admin.user.full_name for admin in await get_admins(update)]
+    await update.message.reply_text("Admins:\n" + "\n".join(names))
+
+async def profile(update, context):
+    user = get_replied_user(update) or update.message.from_user
+    uid = str(user.id)
+    name = user.full_name
+    uname = f"@{user.username}" if user.username else "No username"
+    xp = USER_XP.get(uid, 0)
+    await update.message.reply_text(f"👤 *Profile Info:*\nName: {name}\nUsername: {uname}\nID: `{uid}`\nXP: {xp}", parse_mode=ParseMode.MARKDOWN)
+
+async def history(update, context):
+    user = get_replied_user(update)
+    if user:
+        uid = str(user.id)
+        name = user.full_name
+        uname = f"@{user.username}" if user.username else "No username"
+        USER_LOGS[uid] = {"name": name, "username": uname, "id": uid}
+        await update.message.reply_text(f"🕵️ *History Log:*\nName: {name}\nUsername: {uname}\nID: `{uid}`", parse_mode=ParseMode.MARKDOWN)
+
+async def leaderboard(update, context):
+    top = sorted(USER_XP.items(), key=lambda x: x[1], reverse=True)[:10]
+    reply = "🏆 *Top 10 Users:*\n"
+    for i, (uid, xp) in enumerate(top, 1):
+        name = USER_LOGS.get(uid, {}).get("name", "User")
+        reply += f"{i}. {name} — {xp} XP\n"
+    await update.message.reply_text(reply, parse_mode=ParseMode.MARKDOWN)
+
+# CORE
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(simran_style(is_intro=True), parse_mode="Markdown")
 
@@ -161,63 +201,50 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg or not msg.text:
         return
+    uid = msg.from_user.id
+    text = msg.text
+    chat_type = msg.chat.type
 
-    user_message = msg.text
-    user_id = msg.from_user.id
-
-    if msg.chat.type in ["group", "supergroup"]:
-        trigger = is_simran_mentioned(user_message) or is_aman_mentioned(user_message)
-        reply_to_simran = (
-            msg.reply_to_message
-            and msg.reply_to_message.from_user
-            and msg.reply_to_message.from_user.is_bot
-            and msg.reply_to_message.from_user.username
-            and msg.reply_to_message.from_user.username.lower() == SIMRAN_USERNAME.lower()
-        )
+    if chat_type in ["group", "supergroup"]:
+        trigger = is_simran_mentioned(text) or is_aman_mentioned(text)
+        reply_to_simran = msg.reply_to_message and msg.reply_to_message.from_user and msg.reply_to_message.from_user.is_bot and msg.reply_to_message.from_user.username.lower() == SIMRAN_USERNAME.lower()
         if not (trigger or reply_to_simran):
             return
 
-    # Aman mention
-    if is_aman_mentioned(user_message):
-        await msg.chat.send_action(ChatAction.TYPING)
-        await msg.reply_text(simran_style(is_aman=True), parse_mode="Markdown")
-        return
+    USER_HISTORY[uid].append(text)
+    USER_XP[str(uid)] += 5
+    USER_LOGS[str(uid)] = {"name": msg.from_user.full_name, "username": msg.from_user.username, "id": uid}
 
-    # Owner/credit
-    if is_owner_question(user_message):
-        await msg.chat.send_action(ChatAction.TYPING)
-        await msg.reply_text(simran_style(is_owner=True), parse_mode="Markdown")
-        return
-
-    # Identity
-    if is_identity_question(user_message):
-        await msg.chat.send_action(ChatAction.TYPING)
-        await msg.reply_text(simran_style(is_identity=True), parse_mode="Markdown")
-        return
-
-    # Bad words
-    if is_bad_message(user_message):
-        await msg.chat.send_action(ChatAction.TYPING)
-        await msg.reply_text(simran_style(is_bad=True), parse_mode="Markdown")
-        return
-
-    # Memory save
-    USER_HISTORY[user_id].append(user_message)
-
-    # Now typing... since reply is expected
     await msg.chat.send_action(ChatAction.TYPING)
 
-    # Ask AI
-    user_mode = detect_lang_mode(user_message)
-    ai_reply = await ask_ncompass(user_message, user_mode, user_id=user_id)
-    stylish_reply = simran_style(user_message, ai_reply=ai_reply)
-    await msg.reply_text(stylish_reply, parse_mode="Markdown")
+    if is_aman_mentioned(text):
+        await msg.reply_text(simran_style(is_aman=True), parse_mode="Markdown")
+    elif is_owner_question(text):
+        await msg.reply_text(simran_style(is_owner=True), parse_mode="Markdown")
+    elif is_identity_question(text):
+        await msg.reply_text(simran_style(is_identity=True), parse_mode="Markdown")
+    elif is_bad_message(text):
+        await msg.reply_text(simran_style(is_bad=True), parse_mode="Markdown")
+    else:
+        mode = detect_lang_mode(text)
+        ai_reply = await ask_ncompass(text, mode, user_id=uid)
+        await msg.reply_text(simran_style(text, ai_reply=ai_reply), parse_mode="Markdown")
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), reply))
-    logger.info("Simran Bot is running (Railway ready)!")
+    app.add_handler(CommandHandler("pin", pin))
+    app.add_handler(CommandHandler("dpin", dpin))
+    app.add_handler(CommandHandler("ban", ban))
+    app.add_handler(CommandHandler("kick", kick))
+    app.add_handler(CommandHandler("mute", mute))
+    app.add_handler(CommandHandler("unmute", unmute))
+    app.add_handler(CommandHandler("admins", admins))
+    app.add_handler(CommandHandler("profile", profile))
+    app.add_handler(CommandHandler("history", history))
+    app.add_handler(CommandHandler("leaderboard", leaderboard))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply))
+    logger.info("Simran Bot is running (Admin version ready)!")
     app.run_polling()
 
 if __name__ == '__main__':
