@@ -23,12 +23,6 @@ client = OpenAI(base_url="https://api.ncompass.tech/v1", api_key=NCOMPASS_API_KE
 USER_HISTORY = defaultdict(lambda: deque(maxlen=5))
 USER_XP = defaultdict(int)
 USER_LOGS = {}
-LINK_PROTECTION = defaultdict(bool)
-SLOW_MODE = defaultdict(bool)
-MEDIA_SETTING = defaultdict(bool)
-TEXT_SETTING = defaultdict(bool)
-VOICE_SETTING = defaultdict(bool)
-GIF_SETTING = defaultdict(bool)
 
 AMAN_NAMES = ["aman", "@loveyouaman"]
 OWNER_KEYWORDS = ["founder", "owner", "creator", "bf", "boyfriend", "banaya", "dost", "friend", "frd", "father", "maker", "develop", "creator"]
@@ -40,6 +34,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Utility Functions
+
 def is_bad_message(text):
     return any(bad in text.lower() for bad in BAD_WORDS)
 
@@ -198,56 +193,6 @@ async def leaderboard(update, context):
         reply += f"{i}. {name} — {xp} XP\n"
     await update.message.reply_text(reply, parse_mode=ParseMode.MARKDOWN)
 
-# CHARTGPT COMMANDS
-async def link_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat.id
-    LINK_PROTECTION[chat_id] = not LINK_PROTECTION[chat_id]
-    status = "enabled" if LINK_PROTECTION[chat_id] else "disabled"
-    await update.message.reply_text(f"🔗 Link protection has been {status}!")
-
-async def slowmode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat.id
-    SLOW_MODE[chat_id] = not SLOW_MODE[chat_id]
-    status = "enabled" if SLOW_MODE[chat_id] else "disabled"
-    await update.message.reply_text(f"⏳ Slow mode has been {status}!")
-
-async def media_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat.id
-    MEDIA_SETTING[chat_id] = not MEDIA_SETTING[chat_id]
-    status = "enabled" if MEDIA_SETTING[chat_id] else "disabled"
-    await update.message.reply_text(f"🖼️ Media sharing has been {status}!")
-
-async def text_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat.id
-    TEXT_SETTING[chat_id] = not TEXT_SETTING[chat_id]
-    status = "enabled" if TEXT_SETTING[chat_id] else "disabled"
-    await update.message.reply_text(f"📝 Text messages have been {status}!")
-
-async def voice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat.id
-    VOICE_SETTING[chat_id] = not VOICE_SETTING[chat_id]
-    status = "enabled" if VOICE_SETTING[chat_id] else "disabled"
-    await update.message.reply_text(f"🎤 Voice messages have been {status}!")
-
-async def gif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat.id
-    GIF_SETTING[chat_id] = not GIF_SETTING[chat_id]
-    status = "enabled" if GIF_SETTING[chat_id] else "disabled"
-    await update.message.reply_text(f"🪄 Stickers & GIFs have been {status}!")
-
-async def permission_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat.id
-    reply_text = (
-        "🔒 Current permissions:\n"
-        f"- Links: {'🔴 Restricted' if LINK_PROTECTION.get(chat_id, False) else '🟢 Allowed'}\n"
-        f"- Slowmode: {'🔴 Active' if SLOW_MODE.get(chat_id, False) else '🟢 Inactive'}\n"
-        f"- Media: {'🟢 Allowed' if MEDIA_SETTING.get(chat_id, True) else '🔴 Blocked'}\n"
-        f"- Text: {'🟢 Allowed' if TEXT_SETTING.get(chat_id, True) else '🔴 Blocked'}\n"
-        f"- Voice: {'🟢 Allowed' if VOICE_SETTING.get(chat_id, True) else '🔴 Blocked'}\n"
-        f"- GIFs/Stickers: {'🟢 Allowed' if GIF_SETTING.get(chat_id, True) else '🔴 Blocked'}"
-    )
-    await update.message.reply_text(reply_text)
-
 # CORE
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(simran_style(is_intro=True), parse_mode="Markdown")
@@ -287,8 +232,6 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
-    
-    # Existing handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("pin", pin))
     app.add_handler(CommandHandler("dpin", dpin))
@@ -300,18 +243,8 @@ def main():
     app.add_handler(CommandHandler("profile", profile))
     app.add_handler(CommandHandler("history", history))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
-    
-    # New ChartGPT command handlers
-    app.add_handler(CommandHandler("link", link_command))
-    app.add_handler(CommandHandler("slowmode", slowmode_command))
-    app.add_handler(CommandHandler("media", media_command))
-    app.add_handler(CommandHandler("text", text_command))
-    app.add_handler(CommandHandler("voice", voice_command))
-    app.add_handler(CommandHandler("gif", gif_command))
-    app.add_handler(CommandHandler("permission", permission_command))
-    
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply))
-    logger.info("Simran Bot is running with all features!")
+    logger.info("Simran Bot is running (Admin version ready)!")
     app.run_polling()
 
 if __name__ == '__main__':
