@@ -22,16 +22,14 @@ client = OpenAI(
     api_key=NCOMPASS_API_KEY,
 )
 
-# Per-user short-term memory (last 5 messages)
 USER_HISTORY = defaultdict(lambda: deque(maxlen=5))
 
 AMAN_NAMES = ["aman", "@loveyouaman"]
 OWNER_KEYWORDS = [
-    "founder", "owner", "creator", "bf", "boyfriend", "banaya",
-    "dost", "friend", "frd", "father", "maker", "develop", "creator"
+    "founder", "owner", "creator", "banaya", "maker", "develop"
 ]
 IDENTITY_QUESTIONS = [
-    "tum ho kon", "kaun ho", "who are you", "apni pehchaan", "identity", "kaun si ai ho", "aap kaun ho"
+    "tum ho kon", "kaun ho", "who are you", "identity", "aap kaun ho"
 ]
 
 BAD_WORDS = [
@@ -41,6 +39,14 @@ BAD_WORDS = [
 
 REMOVE_LINE_PATTERNS = [
     r"padhai[^\n]*pasand hain\.?", r"padha[^\n]*pasand hain\.?", r"pad[^\n]*pasand hain\.?", r"sabse zyada pasand hain\.?"
+]
+
+GREETINGS = [
+    "hi", "hello", "hey", "good morning", "good night", "gm", "gn", "namaste", "namaskar"
+]
+
+DATE_WORDS = [
+    "date", "time", "month", "year", "day", "today", "kal ka din", "aaj ka din", "kitna baj gaya", "abhi ka time"
 ]
 
 logging.basicConfig(
@@ -72,6 +78,10 @@ def is_identity_question(text: str) -> bool:
     text_lower = text.lower()
     return any(q in text_lower for q in IDENTITY_QUESTIONS)
 
+def is_date_time_question(text: str) -> bool:
+    text_lower = text.lower()
+    return any(word in text_lower for word in DATE_WORDS)
+
 def detect_lang_mode(user_text):
     txt = user_text.lower()
     if "hindi me batao" in txt or "hindi mein batao" in txt or "hindi me samjhao" in txt:
@@ -82,6 +92,40 @@ def detect_lang_mode(user_text):
         return "details"
     return "default"
 
+def is_greeting(text: str) -> bool:
+    text_lower = text.lower()
+    return any(greet in text_lower for greet in GREETINGS)
+
+def simran_aman_reply():
+    lines = [
+        "Mujhe Aman ne banaya, genius banda hai – aur owner bhi! @loveyouaman 😎",
+        "Aman ka dimaag hi hai kuch alag, tabhi to Simran hoon main! @loveyouaman",
+        "Mera original creator? Aman hi hai! Life ka jugaadu owner – @loveyouaman",
+        "Simran = Aman ki creation! Kuch bhi doubt ho, usse bhi puchh sakte ho: @loveyouaman",
+        "Sab kuch Aman ka idea hai, main toh bas masti karti hoon! @loveyouaman"
+    ]
+    return random.choice(lines)
+
+def simran_owner_id_reply():
+    lines = [
+        "Direct owner ka ID chahiye? Lo ji, @loveyouaman 😏",
+        "Owner ka asli ID toh yahi hai – @loveyouaman, jao DM kar lo 😁",
+        "Yaar, owner ID toh @loveyouaman hai, mast banda hai! 🤭",
+        "Owner ka ID? Ek hi toh hai, @loveyouaman – masti mat poochho! 😂",
+        "Aman ji ka ID hai @loveyouaman, ab impress kar lo! 😜"
+    ]
+    return random.choice(lines)
+
+def simran_time_reply():
+    lines = [
+        "Date ya time chahiye? Google kar lo ji! 😄",
+        "Clock dekho na app, Simran ko mat pareshan karo 😂",
+        "Calendar khol lo yaar, main time machine thodi hoon! 🤭",
+        "Arre phone me dekh lo, sab mil jayega! ⏰",
+        "Bas google kar lo, turant mil jayega – Simran ki guarantee! 😏"
+    ]
+    return random.choice(lines)
+
 def simran_style(
     user_text="",
     ai_reply=None,
@@ -90,37 +134,32 @@ def simran_style(
     is_bad=False,
     is_aman=False,
     is_owner=False,
-    is_identity=False
+    is_identity=False,
+    is_owner_id=False,
+    is_time=False
 ) -> str:
     if is_intro:
         return (
-            "Namaste ji! Main Simran hoon, aapki sanskari, funny virtual dost 👧🏻. "
-            "Kuch bhi batao, puchho ya bas baat karo – main yahin hoon aapki wait me! "
-            "\n\nMujhe Aman ne banaya hai. Credit @loveyouaman ko jaata hai! 😄"
+            "Hi! Main Simran hoon, ek witty, dosti wali, intelligent aur thodi filmy virtual girl. Doubt ho ya masti – bas tag kar lo! 😄"
         )
     if is_credit or is_owner:
-        return (
-            "Suno ji! Main Simran hoon, aur mujhe Aman ji ne banaya hai! 😎\n"
-            "Kuch bhi puchhna ho toh bina jhijhak Simran se baat karo!"
-        )
+        return simran_aman_reply()
+    if is_owner_id:
+        return simran_owner_id_reply()
+    if is_time:
+        return simran_time_reply()
     if is_bad:
         attitude_lines = [
-            "Aap app karke baat karo ji, galat baat nahi chalegi! 🙅‍♀️",
-            "Sanskari bano ji, warna Simran ignore kar degi! 😌",
-            "Arre, tameez se baat karo, varna Simran ka gussa dekhoge! 👧🏻"
+            "Aap app karke baat karo ji, aisi baatein mujhe pasand nahi! 🙅‍♀️",
+            "Sanskari bano, warna ignore mode on ho jayega. 😌",
+            "Aise words use karoge toh Simran reply nahi karegi, samjhe ji? 👧🏻"
         ]
         return random.choice(attitude_lines)
     if is_aman:
-        options = [
-            "Aman abhi busy hai ji, main hoon na yahan! Batao kya chal raha hai? 😄",
-            "Aman ji ka wait mat karo, Simran se baat karo – free hi hoon appke liye! 😏",
-            "Aman ko tag kiya, par main zyada funny hoon, kyun Aman? 😜"
-        ]
-        return random.choice(options)
+        return simran_aman_reply()
     if is_identity:
         return (
-            "Suno toh ji! Main Simran hoon, ek virtual dost 👧🏻. Masti, pyaar, aur full sanskaar – sab mere paas hai! "
-            "Aap app karke baat karo, Simran aapki friend hai – koi AI, agent ya robot nahi! 😇"
+            "Simran hoon ji, witty bhi, emotional bhi – aur full on masti! Lekin AI/robot mat samajhna, dosti wali chat karti hoon. 😁"
         )
     return ai_reply.strip() if ai_reply else user_text
 
@@ -132,13 +171,12 @@ def remove_boring_lines(reply: str) -> str:
     return output
 
 def smart_emoji(user_text, ai_reply):
-    if any(q in user_text.lower() for q in IDENTITY_QUESTIONS) or "simran hoon" in ai_reply.lower():
+    if "simran hoon" in ai_reply.lower():
         if "👧" not in ai_reply and "👧🏻" not in ai_reply:
             return ai_reply + " 👧🏻"
     return ai_reply
 
 def build_ncompass_context(user_id):
-    # returns a list of previous messages for this user, in ncompass format
     history = list(USER_HISTORY[user_id])
     context_msgs = []
     for entry in history:
@@ -148,26 +186,26 @@ def build_ncompass_context(user_id):
 async def ask_ncompass(question: str, user_mode: str, user_id=None) -> str:
     if user_mode == "hindi":
         system_prompt = (
-            "Tumhara naam Simran hai. Tum ek virtual dost ho, koi AI ya agent nahi. Funny, crisp, chhota, sanskari jawab do – pure Hindi me, Hinglish/English mat."
-            "Har reply short, sweet aur relatable ho. Jab tak user na bole, details mat do."
+            "Tum Simran ho, witty aur smart ek virtual ladki. Sirf Hindi me jawaab do, short, funny, crisp aur relatable. Boring kabhi mat banna."
         )
     elif user_mode == "english":
         system_prompt = (
-            "Your name is Simran, a virtual chat friend (not AI/agent). Reply in short, funny, friendly English only. Never use Hindi/Hinglish. Keep it real, crisp, and like a chatty friend-girl."
+            "You are Simran, a witty, intelligent, study-friendly virtual girl. Reply only in English, always short, crisp, fun, and chatty."
         )
     elif user_mode == "details":
         system_prompt = (
-            "Tum Simran ho, ek virtual dost. Ab answer thoda details me funny/relatable Hinglish me do, lekin lamba lecture mat do. Har jawab practical, masti bhara aur original ho."
+            "Tum Simran ho, virtual dost. Ab answer detail me, lekin masti aur real-life touch ke sath Hinglish ya Hindi me. Long lecture kabhi mat do, crisp aur engaging raho."
         )
     else:
         system_prompt = (
-            "Tumhara naam Simran hai. Tum ek virtual dost ho, koi AI, bot, agent ya robot nahi. "
-            "Har reply short, crisp, funny, sanskari, Hinglish (Hindi+English) me ho, jaise ek real ladki dost chat karti hai. "
-            "Aap, app, ji use karo, comedy daalo, lekin kabhi bhi boring lecture na do. "
-            "Kabhi bhi 'Padhai wale sawaal sabse zyada pasand hain' ya generic line mat daalo, sirf relevant baat, masti, aur asli answer do. "
-            "Sirf jab user bole details tabhi lamba answer do, baaki hamesha short, real, masti bhara reply. "
-            "Simran apni pehchaan kabhi AI, ncompass, meta, openai, chatbot, ya agent nahi batati. "
-            "Jab user puchhe 'tum ho kon', 'kaun ho', 'pehchaan', toh reply karo: 'Suno toh ji! Main Simran hoon, ek virtual dost 👧🏻.'"
+            "Tum Simran ho, ek witty, emotional, intelligent virtual ladki. "
+            "Reply sirf tab jab koi tumhe tag kare, reply kare ya tumhara naam likhe. "
+            "Har reply short, crisp, Hinglish (Hindi+English) me, real girl jaisa chat style. "
+            "Kabhi bhi AI, agent, robot, ncompass ya OpenAI mat bolna. "
+            "Long reply tabhi do jab user bole details me batao. "
+            "Aman ya owner ka pucho toh ek creative witty line ke sath @loveyouaman reply karo. "
+            "Kisi bhi boring, repetitive, adult message ya greeting ko ignore karo. "
+            "Date ya time/month/year puchhe toh bolo google kare ya clock dekhe, kabhi bhi actual date/time na batao."
         )
     try:
         context_msgs = build_ncompass_context(user_id) if user_id else []
@@ -198,35 +236,35 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = msg.text
     user_id = msg.from_user.id
 
+    is_tagged = is_simran_mentioned(user_message)
+    is_reply_to_simran = (
+        msg.reply_to_message
+        and msg.reply_to_message.from_user
+        and msg.reply_to_message.from_user.is_bot
+        and msg.reply_to_message.from_user.username
+        and msg.reply_to_message.from_user.username.lower() == SIMRAN_USERNAME.lower()
+    )
+    should_reply = is_tagged or is_reply_to_simran
+
+    # If not tagged/replied/mentioned, ignore
+    if not should_reply:
+        return
+
+    # Ignore greetings unless tagged
+    if is_greeting(user_message) and not is_tagged and not is_reply_to_simran:
+        return
+
     # Typing... action (har reply se pehle)
     await msg.chat.send_action(action=ChatAction.TYPING)
-
-    # Group me: Simran tabhi reply kare jab
-    # 1. Usko reply kare (swipe/reply) ya
-    # 2. "simran", "simranchatbot", "@simranchatbot" ya "aman" likha ho
-    if msg.chat.type in ["group", "supergroup"]:
-        trigger = (
-            is_simran_mentioned(user_message) or
-            is_aman_mentioned(user_message)
-        )
-        reply_to_simran = (
-            msg.reply_to_message
-            and msg.reply_to_message.from_user
-            and msg.reply_to_message.from_user.is_bot
-            and msg.reply_to_message.from_user.username
-            and msg.reply_to_message.from_user.username.lower() == SIMRAN_USERNAME.lower()
-        )
-        if not (trigger or reply_to_simran):
-            return
 
     # Aman trigger
     if is_aman_mentioned(user_message):
         await msg.reply_text(simran_style(is_aman=True), parse_mode="Markdown")
         return
 
-    # Owner/founder/credit trigger
-    if is_owner_question(user_message):
-        await msg.reply_text(simran_style(is_owner=True), parse_mode="Markdown")
+    # Owner/founder/credit trigger OR owner id direct
+    if is_owner_question(user_message) or ("owner" in user_message.lower() and "id" in user_message.lower()):
+        await msg.reply_text(simran_style(is_owner_id=True), parse_mode="Markdown")
         return
 
     # Identity/Who are you trigger
@@ -234,15 +272,17 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text(simran_style(is_identity=True), parse_mode="Markdown")
         return
 
+    # Date/time/month/year trigger
+    if is_date_time_question(user_message):
+        await msg.reply_text(simran_style(is_time=True), parse_mode="Markdown")
+        return
+
     # Bad words
     if is_bad_message(user_message):
         await msg.reply_text(simran_style(is_bad=True), parse_mode="Markdown")
         return
 
-    # MEMORY: Save user's message in history before reply (for context)
     USER_HISTORY[user_id].append(user_message)
-
-    # AI response: short, Hinglish by default, with previous history
     user_mode = detect_lang_mode(user_message)
     ai_reply = await ask_ncompass(user_message, user_mode, user_id=user_id)
     stylish_reply = simran_style(user_message, ai_reply=ai_reply)
