@@ -23,6 +23,12 @@ client = OpenAI(base_url="https://api.ncompass.tech/v1", api_key=NCOMPASS_API_KE
 USER_HISTORY = defaultdict(lambda: deque(maxlen=5))
 USER_XP = defaultdict(int)
 USER_LOGS = {}
+LINK_PROTECTION = defaultdict(bool)
+SLOW_MODE = defaultdict(bool)
+MEDIA_SETTING = defaultdict(bool)
+TEXT_SETTING = defaultdict(bool)
+VOICE_SETTING = defaultdict(bool)
+GIF_SETTING = defaultdict(bool)
 
 AMAN_NAMES = ["aman", "@loveyouaman"]
 OWNER_KEYWORDS = ["founder", "owner", "creator", "bf", "boyfriend", "banaya", "dost", "friend", "frd", "father", "maker", "develop", "creator"]
@@ -33,6 +39,7 @@ REMOVE_LINE_PATTERNS = [r"padhai[^\n]*pasand hain\\.?", r"padha[^\n]*pasand hain
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Utility Functions
 def is_bad_message(text):
     return any(bad in text.lower() for bad in BAD_WORDS)
 
@@ -118,8 +125,7 @@ async def ask_ncompass(question, user_mode, user_id=None):
         logger.error(f"NCompass error: {e}")
         return "Arey, Simran thoda busy ho gayi hai, baad me try karo ji!"
 
-# ========== Admin Tools ==========
-
+# ADMIN FEATURES
 async def get_admins(update):
     return await update.message.chat.get_administrators()
 
@@ -128,29 +134,121 @@ def get_replied_user(update):
         return update.message.reply_to_message.from_user
     return None
 
-async def pin(update, context): ...
-async def dpin(update, context): ...
-async def ban(update, context): ...
-async def kick(update, context): ...
-async def mute(update, context): ...
-async def unmute(update, context): ...
-async def admins(update, context): ...
-async def profile(update, context): ...
-async def history(update, context): ...
-async def leaderboard(update, context): ...
+async def pin(update, context):
+    if update.message.reply_to_message:
+        await update.message.chat.pin_message(update.message.reply_to_message.message_id)
+        await update.message.reply_text("Pinned! 📌")
 
-# ========== New Control Commands ==========
+async def dpin(update, context):
+    await update.message.chat.unpin_all_messages()
+    await update.message.reply_text("All messages unpinned.")
 
-async def toggle_link(update, context): ...
-async def toggle_slowmode(update, context): ...
-async def toggle_media(update, context): ...
-async def toggle_text(update, context): ...
-async def toggle_voice(update, context): ...
-async def toggle_gif(update, context): ...
-async def check_permission(update, context): ...
+async def ban(update, context):
+    user = get_replied_user(update)
+    if user:
+        await update.message.chat.ban_member(user.id)
+        await update.message.reply_text(f"{user.first_name} banned!")
 
-# ========== Core Bot Functions ==========
+async def kick(update, context):
+    user = get_replied_user(update)
+    if user:
+        await update.message.chat.ban_member(user.id)
+        await update.message.chat.unban_member(user.id)
+        await update.message.reply_text(f"{user.first_name} kicked!")
 
+async def mute(update, context):
+    user = get_replied_user(update)
+    if user:
+        until = datetime.utcnow() + timedelta(hours=1)
+        await update.message.chat.restrict_member(user.id, ChatPermissions(), until_date=until)
+        await update.message.reply_text(f"{user.first_name} muted for 1hr!")
+
+async def unmute(update, context):
+    user = get_replied_user(update)
+    if user:
+        await update.message.chat.restrict_member(user.id, ChatPermissions(can_send_messages=True))
+        await update.message.reply_text(f"{user.first_name} unmuted!")
+
+async def admins(update, context):
+    names = [admin.user.full_name for admin in await get_admins(update)]
+    await update.message.reply_text("Admins:\n" + "\n".join(names))
+
+async def profile(update, context):
+    user = get_replied_user(update) or update.message.from_user
+    uid = str(user.id)
+    name = user.full_name
+    uname = f"@{user.username}" if user.username else "No username"
+    xp = USER_XP.get(uid, 0)
+    await update.message.reply_text(f"👤 *Profile Info:*\nName: {name}\nUsername: {uname}\nID: `{uid}`\nXP: {xp}", parse_mode=ParseMode.MARKDOWN)
+
+async def history(update, context):
+    user = get_replied_user(update)
+    if user:
+        uid = str(user.id)
+        name = user.full_name
+        uname = f"@{user.username}" if user.username else "No username"
+        USER_LOGS[uid] = {"name": name, "username": uname, "id": uid}
+        await update.message.reply_text(f"🕵️ *History Log:*\nName: {name}\nUsername: {uname}\nID: `{uid}`", parse_mode=ParseMode.MARKDOWN)
+
+async def leaderboard(update, context):
+    top = sorted(USER_XP.items(), key=lambda x: x[1], reverse=True)[:10]
+    reply = "🏆 *Top 10 Users:*\n"
+    for i, (uid, xp) in enumerate(top, 1):
+        name = USER_LOGS.get(uid, {}).get("name", "User")
+        reply += f"{i}. {name} — {xp} XP\n"
+    await update.message.reply_text(reply, parse_mode=ParseMode.MARKDOWN)
+
+# CHARTGPT COMMANDS
+async def link_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat.id
+    LINK_PROTECTION[chat_id] = not LINK_PROTECTION[chat_id]
+    status = "enabled" if LINK_PROTECTION[chat_id] else "disabled"
+    await update.message.reply_text(f"🔗 Link protection has been {status}!")
+
+async def slowmode_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat.id
+    SLOW_MODE[chat_id] = not SLOW_MODE[chat_id]
+    status = "enabled" if SLOW_MODE[chat_id] else "disabled"
+    await update.message.reply_text(f"⏳ Slow mode has been {status}!")
+
+async def media_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat.id
+    MEDIA_SETTING[chat_id] = not MEDIA_SETTING[chat_id]
+    status = "enabled" if MEDIA_SETTING[chat_id] else "disabled"
+    await update.message.reply_text(f"🖼️ Media sharing has been {status}!")
+
+async def text_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat.id
+    TEXT_SETTING[chat_id] = not TEXT_SETTING[chat_id]
+    status = "enabled" if TEXT_SETTING[chat_id] else "disabled"
+    await update.message.reply_text(f"📝 Text messages have been {status}!")
+
+async def voice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat.id
+    VOICE_SETTING[chat_id] = not VOICE_SETTING[chat_id]
+    status = "enabled" if VOICE_SETTING[chat_id] else "disabled"
+    await update.message.reply_text(f"🎤 Voice messages have been {status}!")
+
+async def gif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat.id
+    GIF_SETTING[chat_id] = not GIF_SETTING[chat_id]
+    status = "enabled" if GIF_SETTING[chat_id] else "disabled"
+    await update.message.reply_text(f"🪄 Stickers & GIFs have been {status}!")
+
+async def permission_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat.id
+    reply_text = (
+        "🔒 Current permissions:\n"
+        f"- Links: {'🔴 Restricted' if LINK_PROTECTION.get(chat_id, False) else '🟢 Allowed'}\n"
+        f"- Slowmode: {'🔴 Active' if SLOW_MODE.get(chat_id, False) else '🟢 Inactive'}\n"
+        f"- Media: {'🟢 Allowed' if MEDIA_SETTING.get(chat_id, True) else '🔴 Blocked'}\n"
+        f"- Text: {'🟢 Allowed' if TEXT_SETTING.get(chat_id, True) else '🔴 Blocked'}\n"
+        f"- Voice: {'🟢 Allowed' if VOICE_SETTING.get(chat_id, True) else '🔴 Blocked'}\n"
+        f"- GIFs/Stickers: {'🟢 Allowed' if GIF_SETTING.get(chat_id, True) else '🔴 Blocked'}"
+    )
+    await update.message.reply_text(reply_text)
+
+# CORE
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(simran_style(is_intro=True), parse_mode="Markdown")
 
@@ -187,10 +285,10 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ai_reply = await ask_ncompass(text, mode, user_id=uid)
         await msg.reply_text(simran_style(text, ai_reply=ai_reply), parse_mode="Markdown")
 
-# ========== Start Bot ==========
-
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
+    
+    # Existing handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("pin", pin))
     app.add_handler(CommandHandler("dpin", dpin))
@@ -202,13 +300,16 @@ def main():
     app.add_handler(CommandHandler("profile", profile))
     app.add_handler(CommandHandler("history", history))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
-    app.add_handler(CommandHandler("link", toggle_link))
-    app.add_handler(CommandHandler("slowmode", toggle_slowmode))
-    app.add_handler(CommandHandler("media", toggle_media))
-    app.add_handler(CommandHandler("text", toggle_text))
-    app.add_handler(CommandHandler("voice", toggle_voice))
-    app.add_handler(CommandHandler("gif", toggle_gif))
-    app.add_handler(CommandHandler("permission", check_permission))
+    
+    # New ChartGPT command handlers
+    app.add_handler(CommandHandler("link", link_command))
+    app.add_handler(CommandHandler("slowmode", slowmode_command))
+    app.add_handler(CommandHandler("media", media_command))
+    app.add_handler(CommandHandler("text", text_command))
+    app.add_handler(CommandHandler("voice", voice_command))
+    app.add_handler(CommandHandler("gif", gif_command))
+    app.add_handler(CommandHandler("permission", permission_command))
+    
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply))
     logger.info("Simran Bot is running with all features!")
     app.run_polling()
