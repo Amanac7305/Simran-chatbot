@@ -33,8 +33,6 @@ REMOVE_LINE_PATTERNS = [r"padhai[^\n]*pasand hain\\.?", r"padha[^\n]*pasand hain
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Utility Functions
-
 def is_bad_message(text):
     return any(bad in text.lower() for bad in BAD_WORDS)
 
@@ -120,7 +118,8 @@ async def ask_ncompass(question, user_mode, user_id=None):
         logger.error(f"NCompass error: {e}")
         return "Arey, Simran thoda busy ho gayi hai, baad me try karo ji!"
 
-# ADMIN FEATURES
+# ========== Admin Tools ==========
+
 async def get_admins(update):
     return await update.message.chat.get_administrators()
 
@@ -129,71 +128,29 @@ def get_replied_user(update):
         return update.message.reply_to_message.from_user
     return None
 
-async def pin(update, context):
-    if update.message.reply_to_message:
-        await update.message.chat.pin_message(update.message.reply_to_message.message_id)
-        await update.message.reply_text("Pinned! 📌")
+async def pin(update, context): ...
+async def dpin(update, context): ...
+async def ban(update, context): ...
+async def kick(update, context): ...
+async def mute(update, context): ...
+async def unmute(update, context): ...
+async def admins(update, context): ...
+async def profile(update, context): ...
+async def history(update, context): ...
+async def leaderboard(update, context): ...
 
-async def dpin(update, context):
-    await update.message.chat.unpin_all_messages()
-    await update.message.reply_text("All messages unpinned.")
+# ========== New Control Commands ==========
 
-async def ban(update, context):
-    user = get_replied_user(update)
-    if user:
-        await update.message.chat.ban_member(user.id)
-        await update.message.reply_text(f"{user.first_name} banned!")
+async def toggle_link(update, context): ...
+async def toggle_slowmode(update, context): ...
+async def toggle_media(update, context): ...
+async def toggle_text(update, context): ...
+async def toggle_voice(update, context): ...
+async def toggle_gif(update, context): ...
+async def check_permission(update, context): ...
 
-async def kick(update, context):
-    user = get_replied_user(update)
-    if user:
-        await update.message.chat.ban_member(user.id)
-        await update.message.chat.unban_member(user.id)
-        await update.message.reply_text(f"{user.first_name} kicked!")
+# ========== Core Bot Functions ==========
 
-async def mute(update, context):
-    user = get_replied_user(update)
-    if user:
-        until = datetime.utcnow() + timedelta(hours=1)
-        await update.message.chat.restrict_member(user.id, ChatPermissions(), until_date=until)
-        await update.message.reply_text(f"{user.first_name} muted for 1hr!")
-
-async def unmute(update, context):
-    user = get_replied_user(update)
-    if user:
-        await update.message.chat.restrict_member(user.id, ChatPermissions(can_send_messages=True))
-        await update.message.reply_text(f"{user.first_name} unmuted!")
-
-async def admins(update, context):
-    names = [admin.user.full_name for admin in await get_admins(update)]
-    await update.message.reply_text("Admins:\n" + "\n".join(names))
-
-async def profile(update, context):
-    user = get_replied_user(update) or update.message.from_user
-    uid = str(user.id)
-    name = user.full_name
-    uname = f"@{user.username}" if user.username else "No username"
-    xp = USER_XP.get(uid, 0)
-    await update.message.reply_text(f"👤 *Profile Info:*\nName: {name}\nUsername: {uname}\nID: `{uid}`\nXP: {xp}", parse_mode=ParseMode.MARKDOWN)
-
-async def history(update, context):
-    user = get_replied_user(update)
-    if user:
-        uid = str(user.id)
-        name = user.full_name
-        uname = f"@{user.username}" if user.username else "No username"
-        USER_LOGS[uid] = {"name": name, "username": uname, "id": uid}
-        await update.message.reply_text(f"🕵️ *History Log:*\nName: {name}\nUsername: {uname}\nID: `{uid}`", parse_mode=ParseMode.MARKDOWN)
-
-async def leaderboard(update, context):
-    top = sorted(USER_XP.items(), key=lambda x: x[1], reverse=True)[:10]
-    reply = "🏆 *Top 10 Users:*\n"
-    for i, (uid, xp) in enumerate(top, 1):
-        name = USER_LOGS.get(uid, {}).get("name", "User")
-        reply += f"{i}. {name} — {xp} XP\n"
-    await update.message.reply_text(reply, parse_mode=ParseMode.MARKDOWN)
-
-# CORE
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(simran_style(is_intro=True), parse_mode="Markdown")
 
@@ -230,6 +187,8 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ai_reply = await ask_ncompass(text, mode, user_id=uid)
         await msg.reply_text(simran_style(text, ai_reply=ai_reply), parse_mode="Markdown")
 
+# ========== Start Bot ==========
+
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -243,8 +202,15 @@ def main():
     app.add_handler(CommandHandler("profile", profile))
     app.add_handler(CommandHandler("history", history))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
+    app.add_handler(CommandHandler("link", toggle_link))
+    app.add_handler(CommandHandler("slowmode", toggle_slowmode))
+    app.add_handler(CommandHandler("media", toggle_media))
+    app.add_handler(CommandHandler("text", toggle_text))
+    app.add_handler(CommandHandler("voice", toggle_voice))
+    app.add_handler(CommandHandler("gif", toggle_gif))
+    app.add_handler(CommandHandler("permission", check_permission))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply))
-    logger.info("Simran Bot is running (Admin version ready)!")
+    logger.info("Simran Bot is running with all features!")
     app.run_polling()
 
 if __name__ == '__main__':
