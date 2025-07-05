@@ -11,11 +11,18 @@ from telegram.constants import ChatAction, ParseMode
 from openai import OpenAI
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
+import asyncio
 
-# ENV config
+# Load environment variables
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 NCOMPASS_API_KEY = os.getenv("NCOMPASS_API_KEY")
+
+if not TOKEN:
+    raise EnvironmentError("TELEGRAM_BOT_TOKEN not set in environment.")
+if not NCOMPASS_API_KEY:
+    raise EnvironmentError("NCOMPASS_API_KEY not set in environment.")
+
 SIMRAN_USERNAME = "simranchatbot"
 
 client = OpenAI(base_url="https://api.ncompass.tech/v1", api_key=NCOMPASS_API_KEY)
@@ -28,7 +35,10 @@ AMAN_NAMES = ["aman", "@loveyouaman"]
 OWNER_KEYWORDS = ["founder", "owner", "creator", "bf", "boyfriend", "banaya", "dost", "friend", "frd", "father", "maker", "develop", "creator"]
 IDENTITY_QUESTIONS = ["tum ho kon", "kaun ho", "who are you", "apni pehchaan", "identity", "kaun si ai ho", "aap kaun ho"]
 BAD_WORDS = ['chu', 'bhos', 'madar', 'behan', 'mc', 'bc', 'fuck', 'gaand', 'lund', 'randi', 'gandu', 'chutiya', 'harami', 'bitch', 'shit', 'asshole']
-REMOVE_LINE_PATTERNS = [r"padhai[^\n]*pasand hain\\.?", r"padha[^\n]*pasand hain\\.?", r"pad[^\n]*pasand hain\\.?", r"sabse zyada pasand hain\\.?"]
+REMOVE_LINE_PATTERNS = [
+    r"(padhai|padha|pad)[^\n]*pasand hain\.?",
+    r"sabse zyada pasand hain\.?"
+]
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -104,7 +114,7 @@ async def ask_ncompass(question, user_mode, user_id=None):
         "default": "Tum Simran ho. Crisp, funny, Hinglish me reply karo. AI/agent mat bolna kabhi bhi."
     }.get(user_mode, user_mode)
 
-    try:
+    async def _call_api():
         messages = [{"role": "system", "content": system_prompt}]
         if user_id:
             messages += build_ncompass_context(user_id)
@@ -114,10 +124,13 @@ async def ask_ncompass(question, user_mode, user_id=None):
             model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
             messages=messages
         )
-        reply = completion.choices[0].message.content.strip()
+        return completion.choices[0].message.content.strip()
+
+    try:
+        reply = await asyncio.wait_for(_call_api(), timeout=20)
         return smart_emoji(question, remove_boring_lines(reply))
     except Exception as e:
-        logger.error(f"NCompass error: {e}")
+        logger.error(f"NCompass error: {e}", exc_info=True)
         return "Arey, Simran thoda busy ho gayi hai, baad me try karo ji!"
 
 # ADMIN FEATURES
@@ -193,6 +206,18 @@ async def leaderboard(update, context):
         reply += f"{i}. {name} — {xp} XP\n"
     await update.message.reply_text(reply, parse_mode=ParseMode.MARKDOWN)
 
+# API healthcheck command
+async def apicheck(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        completion = client.chat.completions.create(
+            model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+            messages=[{"role": "system", "content": "Say hello"}]
+        )
+        reply = completion.choices[0].message.content.strip()
+        await update.message.reply_text(f"API working! Sample reply: {reply}")
+    except Exception as e:
+        await update.message.reply_text(f"API error: {e}")
+
 # CORE
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(simran_style(is_intro=True), parse_mode="Markdown")
@@ -243,9 +268,13 @@ def main():
     app.add_handler(CommandHandler("profile", profile))
     app.add_handler(CommandHandler("history", history))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
+    app.add_handler(CommandHandler("apicheck", apicheck))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply))
     logger.info("Simran Bot is running (Admin version ready)!")
-    app.run_polling()
+    try:
+        app.run_polling()
+    except Exception as e:
+        logger.error(f"Bot crashed: {e}", exc_info=True)
 
 if __name__ == '__main__':
     main()
