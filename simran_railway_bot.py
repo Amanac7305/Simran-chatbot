@@ -16,15 +16,15 @@ import asyncio
 # ENV config
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-NCOMPASS_API_KEY = os.getenv("NCOMPASS_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 SIMRAN_USERNAME = "simranchatbot"
 
 if not TOKEN:
     raise EnvironmentError("TELEGRAM_BOT_TOKEN not set in environment.")
-if not NCOMPASS_API_KEY:
-    raise EnvironmentError("NCOMPASS_API_KEY not set in environment.")
+if not GROQ_API_KEY:
+    raise EnvironmentError("GROQ_API_KEY not set in environment.")
 
-client = OpenAI(base_url="https://api.ncompass.tech/v1", api_key=NCOMPASS_API_KEY)
+client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=GROQ_API_KEY)
 
 USER_HISTORY = defaultdict(lambda: deque(maxlen=5))
 USER_XP = defaultdict(int)
@@ -102,10 +102,13 @@ def smart_emoji(user_text, ai_reply):
             return ai_reply + " 👧🏻"
     return ai_reply
 
-def build_ncompass_context(user_id):
+def build_groq_context(user_id):
     return [{"role": "user", "content": msg} for msg in USER_HISTORY[user_id]]
 
-async def ask_ncompass(question, user_mode, user_id=None):
+# ⭐️⭐️⭐️ Change model here as per Groq docs ⭐️⭐️⭐️
+GROQ_MODEL = "llama3-70b-8192"
+
+async def ask_groq(question, user_mode, user_id=None):
     system_prompt = {
         "hindi": "Tumhara naam Simran hai. Tum ek virtual dost ho. Pure Hindi me crisp jawab do.",
         "english": "Your name is Simran. Reply like a real girl-friend in English. Be funny, short.",
@@ -116,11 +119,11 @@ async def ask_ncompass(question, user_mode, user_id=None):
     async def _call_api():
         messages = [{"role": "system", "content": system_prompt}]
         if user_id:
-            messages += build_ncompass_context(user_id)
+            messages += build_groq_context(user_id)
         messages.append({"role": "user", "content": question})
 
         completion = client.chat.completions.create(
-            model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+            model=GROQ_MODEL,
             messages=messages
         )
         return completion.choices[0].message.content.strip()
@@ -129,11 +132,11 @@ async def ask_ncompass(question, user_mode, user_id=None):
         reply = await asyncio.wait_for(_call_api(), timeout=20)
         return smart_emoji(question, remove_boring_lines(reply))
     except Exception as e:
-        logger.error(f"NCompass error: {e}", exc_info=True)
+        logger.error(f"Groq error: {e}", exc_info=True)
         # DEBUG: show error to user (remove/comment in production)
         return f"API Error: {str(e)}"
 
-# ADMIN FEATURES
+# ADMIN FEATURES (no change)
 async def get_admins(update):
     return await update.message.chat.get_administrators()
 
@@ -210,7 +213,7 @@ async def leaderboard(update, context):
 async def apicheck(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         completion = client.chat.completions.create(
-            model="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+            model=GROQ_MODEL,
             messages=[{"role": "system", "content": "Say hello"}]
         )
         reply = completion.choices[0].message.content.strip()
@@ -252,7 +255,7 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.reply_text(simran_style(is_bad=True), parse_mode="Markdown")
     else:
         mode = detect_lang_mode(text)
-        ai_reply = await ask_ncompass(text, mode, user_id=uid)
+        ai_reply = await ask_groq(text, mode, user_id=uid)
         await msg.reply_text(simran_style(text, ai_reply=ai_reply), parse_mode="Markdown")
 
 def main():
@@ -270,7 +273,7 @@ def main():
     app.add_handler(CommandHandler("leaderboard", leaderboard))
     app.add_handler(CommandHandler("apicheck", apicheck))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply))
-    logger.info("Simran Bot is running (Admin version ready)!")
+    logger.info("Simran Bot is running (with Groq API)!")
     try:
         app.run_polling()
     except Exception as e:
