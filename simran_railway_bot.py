@@ -13,17 +13,16 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta
 import asyncio
 
-# Load environment variables
+# ENV config
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 NCOMPASS_API_KEY = os.getenv("NCOMPASS_API_KEY")
+SIMRAN_USERNAME = "simranchatbot"
 
 if not TOKEN:
     raise EnvironmentError("TELEGRAM_BOT_TOKEN not set in environment.")
 if not NCOMPASS_API_KEY:
     raise EnvironmentError("NCOMPASS_API_KEY not set in environment.")
-
-SIMRAN_USERNAME = "simranchatbot"
 
 client = OpenAI(base_url="https://api.ncompass.tech/v1", api_key=NCOMPASS_API_KEY)
 
@@ -131,7 +130,8 @@ async def ask_ncompass(question, user_mode, user_id=None):
         return smart_emoji(question, remove_boring_lines(reply))
     except Exception as e:
         logger.error(f"NCompass error: {e}", exc_info=True)
-        return "Arey, Simran thoda busy ho gayi hai, baad me try karo ji!"
+        # DEBUG: show error to user (remove/comment in production)
+        return f"API Error: {str(e)}"
 
 # ADMIN FEATURES
 async def get_admins(update):
@@ -216,7 +216,7 @@ async def apicheck(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply = completion.choices[0].message.content.strip()
         await update.message.reply_text(f"API working! Sample reply: {reply}")
     except Exception as e:
-        await update.message.reply_text(f"API error: {e}")
+        await update.message.reply_text(f"API Error: {e}")
 
 # CORE
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
