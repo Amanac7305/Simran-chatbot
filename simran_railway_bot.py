@@ -424,4 +424,4 @@ def main():
     app.add_handler(CommandHandler("leaderboard", leaderboard))
     app.add_handler(CommandHandler("apicheck", apicheck))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply))
-    logger.info("Simran Bot is running (with Groq API and smart memory/gender logic
+    logger.info("Simran Bot is running (with Groq API and smart memory/gender logic)!")
