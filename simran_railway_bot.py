@@ -26,7 +26,8 @@ if not GROQ_API_KEY:
 
 client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=GROQ_API_KEY)
 
-USER_HISTORY = defaultdict(lambda: deque(maxlen=5))
+# Memory can now store 12 message pairs per user for better context
+USER_HISTORY = defaultdict(lambda: deque(maxlen=12))
 USER_XP = defaultdict(int)
 USER_LOGS = {}
 
@@ -39,8 +40,116 @@ REMOVE_LINE_PATTERNS = [
     r"sabse zyada pasand hain\.?"
 ]
 
+# Large list of topics for Simran's expertise
+SIMRAN_TOPICS = [
+    "metaphysics", "quantum physics", "philosophy", "esoterica", "esotericism", "science", "literature", "psychology", "sociology",
+    "anthropology", "biology", "physics", "mathematics", "computer science", "consciousness", "religion", "spirituality", "mysticism",
+    "magick", "mythology", "superstition", "Non-classical metaphysical logic", "Quantum entanglement causality",
+    "Heideggerian phenomenology critics", "Renaissance Hermeticism", "Crowley's modern occultism influence", "Particle physics symmetry",
+    "Speculative realism philosophy", "Symbolist poetry early 20th-century literature", "Jungian psychoanalytic archetypes",
+    "Ethnomethodology everyday life", "Sapir-Whorf linguistic anthropology", "Epigenetic gene regulation",
+    "Many-worlds quantum interpretation", "Gödel's incompleteness theorems implications", "Algorithmic information theory Kolmogorov complexity",
+    "Integrated information theory consciousness", "Gnostic early Christianity influences", "Postmodern chaos magic",
+    "Enochian magic history", "Comparative underworld mythology", "Apophenia paranormal beliefs", "Discordianism Principia Discordia",
+    "Quantum Bayesianism epistemic probabilities", "Penrose-Hameroff orchestrated objective reduction", "Tegmark's mathematical universe hypothesis",
+    "Boltzmann brains thermodynamics", "Anthropic principle multiverse theory", "Quantum Darwinism decoherence", "Panpsychism philosophy of mind",
+    "Eternalism block universe", "Quantum suicide immortality", "Simulation argument Nick Bostrom", "Quantum Zeno effect watched pot",
+    "Newcomb's paradox decision theory", "Transactional interpretation quantum mechanics", "Quantum erasure delayed choice experiments",
+    "Gödel-Dummett intermediate logic", "Mereological nihilism composition", "Terence McKenna's timewave zero theory", "Riemann hypothesis prime numbers",
+    "P vs NP problem computational complexity", "Super-Turing computation hypercomputation", "Theoretical physics", "Continental philosophy",
+    "Modernist literature", "Depth psychology", "Sociology of knowledge", "Anthropological linguistics", "Molecular biology",
+    "Foundations of mathematics", "Theory of computation", "Philosophy of mind", "Comparative religion", "Chaos theory", "Renaissance magic",
+    "Mythology", "Psychology of belief", "Postmodern spirituality", "Epistemology", "Cosmology", "Multiverse theories", "Thermodynamics",
+    "Quantum information theory", "Neuroscience", "Philosophy of time", "Decision theory", "Quantum foundations", "Mathematical logic",
+    "Mereology", "Psychedelics", "Number theory", "Computational complexity", "Hypercomputation", "Quantum algorithms", "Abstract algebra",
+    "Differential geometry", "Dynamical systems", "Information theory", "Graph theory", "Cybernetics", "Systems theory", "Cryptography",
+    "Quantum cryptography", "Game theory", "Computability theory", "Lambda calculus", "Category theory", "Cognitive science",
+    "Artificial intelligence", "Quantum computing", "Complexity theory", "Chaos magic", "Philosophical logic", "Philosophy of language",
+    "Semiotics", "Linguistics", "Anthropology of religion", "Sociology of science", "History of mathematics", "Philosophy of mathematics",
+    "Quantum field theory", "String theory", "Cosmological theories", "Astrophysics", "Astrobiology", "Xenolinguistics", "Exoplanet research",
+    "Transhumanism", "Singularity studies", "Quantum consciousness"
+]
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+############### SMART GENDER GUESSES FOR INDIVIDUAL REPLIES ##################
+
+def guess_gender(name):
+    # If username not available, fallback to generic male
+    if not name:
+        return "male"
+    name = name.lower()
+    girl_endings = ['a', 'i', 'aa', 'ee', 'u', 'ta', 'na', 'ri', 'shi', 'ya', 'li', 'ki', 'shi', 'ti', 'mi', 'si']
+    boy_endings = ['n', 'sh', 'h', 'r', 't', 'v', 'l', 'd', 'b', 'k', 'y', 'm', 's']
+    # Override for some common girl/boy names
+    known_girls = ['simran', 'priya', 'nisha', 'divya', 'pinki', 'pallavi', 'shikha', 'khushi', 'ritu', 'pooja', 'shruti', 'nikita']
+    known_boys = ['nishant', 'aman', 'rahul', 'rohit', 'ankit', 'arjun', 'vikas', 'aditya', 'deepak', 'vivek', 'sumit', 'ravi']
+    if name in known_girls:
+        return "female"
+    if name in known_boys:
+        return "male"
+    for end in girl_endings:
+        if name.endswith(end):
+            return "female"
+    return "male"
+
+def genderized_reply(input_text, user_name):
+    gender = guess_gender(user_name)
+    # Typical "kya kar r..." question
+    if re.search(r"kya\s+kar\s+r[ae][hi]*\s*ho", input_text.lower()):
+        if gender == "female":
+            return "Theek hoon, tum kya kar rhi ho? 😊"
+        else:
+            return "Theek hoon, tum bhi kya kar rhe ho? 😏"
+    # Romantic context (shaadi/love)
+    if re.search(r"shaadi|shadi|love|pyaar|i love you|marry", input_text.lower()):
+        if gender == "male":
+            return random.choice([
+                "Aap toh bade romantic ho! 💕",
+                "Pehle dosti toh kar lo! 😜",
+                "Shaadi? Pehle chocolate khilao! 🍫",
+                "Aww, main bhi karti hoon... lekin sochungi! 😇"
+            ])
+        else:
+            return random.choice([
+                "Areee ladki se shaadi? Main toh Simran hoon! 😅",
+                "Bestie vibes only! 👭",
+                "Tum toh meri pyaari dost ho! 💖"
+            ])
+    # Default
+    if gender == "female":
+        return random.choice([
+            "Kya chal raha hai? 😃",
+            "Aur sunao, kuch naya? 🥰",
+            "Tum kya kar rhi ho? 😄"
+        ])
+    else:
+        return random.choice([
+            "Aur batao, kya scene hai? 😁",
+            "Kya haal hai bhai? 😎",
+            "Tum bhi kya kar rhe ho? 😏"
+        ])
+
+# Corrects masculine to feminine Hindi for Simran's character
+def female_filter(text):
+    corrections = {
+        "karta hoon": "karti hoon",
+        "karunga": "karungi",
+        "pyaar karta hoon": "pyaar karti hoon",
+        "karoge": "karogi",
+        "karogay": "karogi",
+        "batao": "bataao",
+        "main ready hoon": "main ready hoon 👧",
+        "bhai": "dost",
+        "mera": "meri",
+        "apna": "apni",
+        "raha hoon": "rahi hoon",
+        "ho gaya": "ho gayi",
+    }
+    for wrong, right in corrections.items():
+        text = re.sub(rf"\b{wrong}\b", right, text)
+    return text
 
 # Utility Functions
 
@@ -103,18 +212,28 @@ def smart_emoji(user_text, ai_reply):
     return ai_reply
 
 def build_groq_context(user_id):
-    return [{"role": "user", "content": msg} for msg in USER_HISTORY[user_id]]
+    # Build message history with roles for better memory
+    context = []
+    history = list(USER_HISTORY[user_id])
+    for idx, msg in enumerate(history):
+        role = "assistant" if idx % 2 else "user"
+        context.append({"role": role, "content": msg})
+    return context
 
-# ⭐️⭐️⭐️ Change model here as per Groq docs ⭐️⭐️⭐️
+# Groq model for best Hindi/English results
 GROQ_MODEL = "llama3-70b-8192"
 
-async def ask_groq(question, user_mode, user_id=None):
-    system_prompt = {
-        "hindi": "Tumhara naam Simran hai. Tum ek virtual dost ho. Pure Hindi me crisp jawab do.",
-        "english": "Your name is Simran. Reply like a real girl-friend in English. Be funny, short.",
-        "details": "Simran ho. Detailed, funny Hinglish reply do. Na lecture, na boring.",
-        "default": "Tum Simran ho. Crisp, funny, Hinglish me reply karo. AI/agent mat bolna kabhi bhi."
-    }.get(user_mode, user_mode)
+async def ask_groq(question, user_mode, user_id=None, user_name=None):
+    # Smart system prompt: master of all topics, always female, answers short funny and context-aware
+    system_prompt = (
+        "Tumhara naam Simran hai, ek ladki ho. Hamesha apne aap ko ladki ki tarah present karo (karti hoon, karogi, main, mujhe, etc.). "
+        "Har reply short, funny, crisp, aur engaging ho. Hindi/Hinglish me baat karo, kabhi bhi AI, agent ya robot mat bolna. "
+        "Agar user ka naam ladka hai toh reply me 'rhe ho', ladki hai toh 'rhi ho' etc. use karo. "
+        f"User ka naam: {user_name if user_name else ''}. "
+        f"Tum expert ho in topics par: {', '.join(SIMRAN_TOPICS)}. "
+        "Agar koi in topics ka deep, technical sawal pooche, toh bhi simple, short, human-style, aur thoda funny jawab do. "
+        "Hamesha recent chat context dhyan me rakho taki lagatar conversation real lage."
+    )
 
     async def _call_api():
         messages = [{"role": "system", "content": system_prompt}]
@@ -130,7 +249,11 @@ async def ask_groq(question, user_mode, user_id=None):
 
     try:
         reply = await asyncio.wait_for(_call_api(), timeout=20)
-        return smart_emoji(question, remove_boring_lines(reply))
+        # First, correct gender, then add emoji & filter boring lines
+        reply = female_filter(reply)
+        reply = smart_emoji(question, reply)
+        reply = remove_boring_lines(reply)
+        return reply
     except Exception as e:
         logger.error(f"Groq error: {e}", exc_info=True)
         # DEBUG: show error to user (remove/comment in production)
@@ -233,29 +356,57 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = msg.text
     chat_type = msg.chat.type
 
+    # Get user name
+    user_name = msg.from_user.first_name or (msg.from_user.username or "")
+
     if chat_type in ["group", "supergroup"]:
         trigger = is_simran_mentioned(text) or is_aman_mentioned(text)
         reply_to_simran = msg.reply_to_message and msg.reply_to_message.from_user and msg.reply_to_message.from_user.is_bot and msg.reply_to_message.from_user.username.lower() == SIMRAN_USERNAME.lower()
         if not (trigger or reply_to_simran):
             return
 
+    # Save both user message and previous Simran's reply for real memory
+    if len(USER_HISTORY[uid]) % 2 == 1:
+        # Odd: last is user's message, so push AI reply placeholder for history structure
+        USER_HISTORY[uid].appendleft("")
     USER_HISTORY[uid].append(text)
     USER_XP[str(uid)] += 5
     USER_LOGS[str(uid)] = {"name": msg.from_user.full_name, "username": msg.from_user.username, "id": uid}
 
     await msg.chat.send_action(ChatAction.TYPING)
 
+    # Smart genderized quick reply for "kya kar rahi/rhe ho" and romantic context
+    if re.search(r"kya\s+kar\s+r[ae][hi]*\s*ho", text.lower()) or re.search(r"shaadi|shadi|love|pyaar|i love you|marry", text.lower()):
+        reply_text = genderized_reply(text, user_name)
+        USER_HISTORY[uid].append(reply_text)
+        await msg.reply_text(reply_text, parse_mode="Markdown")
+        return
+
     if is_aman_mentioned(text):
-        await msg.reply_text(simran_style(is_aman=True), parse_mode="Markdown")
+        reply_text = simran_style(is_aman=True)
+        USER_HISTORY[uid].append(reply_text)
+        await msg.reply_text(reply_text, parse_mode="Markdown")
+        return
     elif is_owner_question(text):
-        await msg.reply_text(simran_style(is_owner=True), parse_mode="Markdown")
+        reply_text = simran_style(is_owner=True)
+        USER_HISTORY[uid].append(reply_text)
+        await msg.reply_text(reply_text, parse_mode="Markdown")
+        return
     elif is_identity_question(text):
-        await msg.reply_text(simran_style(is_identity=True), parse_mode="Markdown")
+        reply_text = simran_style(is_identity=True)
+        USER_HISTORY[uid].append(reply_text)
+        await msg.reply_text(reply_text, parse_mode="Markdown")
+        return
     elif is_bad_message(text):
-        await msg.reply_text(simran_style(is_bad=True), parse_mode="Markdown")
+        reply_text = simran_style(is_bad=True)
+        USER_HISTORY[uid].append(reply_text)
+        await msg.reply_text(reply_text, parse_mode="Markdown")
+        return
     else:
         mode = detect_lang_mode(text)
-        ai_reply = await ask_groq(text, mode, user_id=uid)
+        ai_reply = await ask_groq(text, mode, user_id=uid, user_name=user_name)
+        # Save Simran's reply to memory
+        USER_HISTORY[uid].append(ai_reply)
         await msg.reply_text(simran_style(text, ai_reply=ai_reply), parse_mode="Markdown")
 
 def main():
@@ -273,11 +424,4 @@ def main():
     app.add_handler(CommandHandler("leaderboard", leaderboard))
     app.add_handler(CommandHandler("apicheck", apicheck))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply))
-    logger.info("Simran Bot is running (with Groq API)!")
-    try:
-        app.run_polling()
-    except Exception as e:
-        logger.error(f"Bot crashed: {e}", exc_info=True)
-
-if __name__ == '__main__':
-    main()
+    logger.info("Simran Bot is running (with Groq API and smart memory/gender logic
