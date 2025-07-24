@@ -39,10 +39,18 @@ REMOVE_LINE_PATTERNS = [
     r"sabse zyada pasand hain\.?"
 ]
 
+HI_WORDS = ['hi', 'hello', 'hii', 'hiiii', 'simran', 'hey']
+USER_HI_COUNT = defaultdict(int)
+HI_REPLIES = [
+    "Hi hi! Kitni baar hi bollegi? 😄",
+    "Haanji, sun rahi hoon! 😅",
+    "Baar baar hi bolna band karo, warna bhaag jaungi! 😜",
+    "Bas bhi karo, ab kuch naya bolo! 😏",
+    "Tumhe hi se bahar kuch aata nahi kya? 😆"
+]
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Utility Functions
 
 def is_bad_message(text):
     return any(bad in text.lower() for bad in BAD_WORDS)
@@ -105,7 +113,6 @@ def smart_emoji(user_text, ai_reply):
 def build_groq_context(user_id):
     return [{"role": "user", "content": msg} for msg in USER_HISTORY[user_id]]
 
-# ⭐️⭐️⭐️ Change model here as per Groq docs ⭐️⭐️⭐️
 GROQ_MODEL = "llama3-70b-8192"
 
 async def ask_groq(question, user_mode, user_id=None):
@@ -133,10 +140,9 @@ async def ask_groq(question, user_mode, user_id=None):
         return smart_emoji(question, remove_boring_lines(reply))
     except Exception as e:
         logger.error(f"Groq error: {e}", exc_info=True)
-        # DEBUG: show error to user (remove/comment in production)
         return f"API Error: {str(e)}"
 
-# ADMIN FEATURES (no change)
+# ADMIN FEATURES (unchanged)
 async def get_admins(update):
     return await update.message.chat.get_administrators()
 
@@ -209,7 +215,6 @@ async def leaderboard(update, context):
         reply += f"{i}. {name} — {xp} XP\n"
     await update.message.reply_text(reply, parse_mode=ParseMode.MARKDOWN)
 
-# API healthcheck command
 async def apicheck(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         completion = client.chat.completions.create(
@@ -221,23 +226,38 @@ async def apicheck(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"API Error: {e}")
 
-# CORE
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(simran_style(is_intro=True), parse_mode="Markdown")
+
+def is_hi_message(text):
+    return text.strip().lower() in HI_WORDS
 
 async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg or not msg.text:
         return
     uid = msg.from_user.id
-    text = msg.text
+    text = msg.text.strip()
     chat_type = msg.chat.type
 
     if chat_type in ["group", "supergroup"]:
         trigger = is_simran_mentioned(text) or is_aman_mentioned(text)
-        reply_to_simran = msg.reply_to_message and msg.reply_to_message.from_user and msg.reply_to_message.from_user.is_bot and msg.reply_to_message.from_user.username.lower() == SIMRAN_USERNAME.lower()
+        reply_to_simran = (
+            msg.reply_to_message and msg.reply_to_message.from_user
+            and msg.reply_to_message.from_user.is_bot
+            and msg.reply_to_message.from_user.username.lower() == SIMRAN_USERNAME.lower()
+        )
         if not (trigger or reply_to_simran):
             return
+
+    # HI/HELLO spam logic
+    if is_hi_message(text):
+        USER_HI_COUNT[uid] += 1
+        reply_text = HI_REPLIES[(USER_HI_COUNT[uid] - 1) % len(HI_REPLIES)]
+        await msg.reply_text(reply_text)
+        return
+    else:
+        USER_HI_COUNT[uid] = 0  # Reset on other message
 
     USER_HISTORY[uid].append(text)
     USER_XP[str(uid)] += 5
