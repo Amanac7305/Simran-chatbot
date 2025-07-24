@@ -1,4 +1,1 @@
-python-telegram-bot==20.8
-requests
-python-dotenv
-openai
+python-telegram-bot==13.15
